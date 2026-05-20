@@ -185,8 +185,10 @@ fn test_setup_custom_precompiles() {
         >;
 
         async fn build_evm(self, ctx: &BuilderContext<Node>) -> eyre::Result<Self::EVM> {
+            // `OpExecutorBuilder::build_evm` returns `OpFirehoseEvmConfig<OpEvmConfig<...>>`;
+            // destructure the inner `OpEvmConfig` to rebuild it with the test EVM factory.
             let OpEvmConfig { executor_factory, block_assembler, sdm_enabled, _pd: _ } =
-                OpExecutorBuilder::default().build_evm(ctx).await?;
+                OpExecutorBuilder::default().build_evm(ctx).await?.inner;
             let uni_executor_factory = OpBlockExecutorFactory::new(
                 *executor_factory.receipt_builder(),
                 ctx.chain_spec(),

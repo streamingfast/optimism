@@ -7,6 +7,7 @@ use reth_node_core::args::{OtlpInitStatus, OtlpLogsStatus};
 use reth_node_metrics::recorder::install_prometheus_recorder;
 use reth_optimism_chainspec::OpChainSpec;
 use reth_optimism_consensus::OpBeaconConsensus;
+use reth_optimism_firehose::OpFirehoseEvmConfig;
 use reth_optimism_node::{OpExecutorProvider, OpNode};
 use reth_rpc_server_types::RpcModuleValidator;
 use reth_tracing::{FileWorkerGuard, Layers};
@@ -70,7 +71,10 @@ where
         install_prometheus_recorder();
 
         let components = |spec: Arc<OpChainSpec>| {
-            (OpExecutorProvider::optimism(spec.clone()), Arc::new(OpBeaconConsensus::new(spec)))
+            (
+                OpFirehoseEvmConfig::new(OpExecutorProvider::optimism(spec.clone())),
+                Arc::new(OpBeaconConsensus::new(spec)),
+            )
         };
 
         match self.cli.command {
