@@ -42,6 +42,7 @@ reth-optimism-trie.workspace = true
 reth-chainspec.workspace = true
 reth-node-events.workspace = true
 reth-optimism-evm.workspace = true
+reth-optimism-firehose.workspace = true
 reth-cli-runner.workspace = true
 reth-tasks.workspace = true
 reth-node-builder.workspace = true
