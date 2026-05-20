@@ -29,6 +29,11 @@ alloy-rpc-types-eth = { workspace = true, optional = true }
 thiserror.workspace = true
 derive_more = { workspace = true, features = ["display"] }
 
+# firehose (optional — enables `reth_firehose::mapper::SignatureFields` impl for
+# `OpTxEnvelope`; orphan-rule constraint forces this trait impl to live alongside the
+# `OpTxEnvelope` type definition).
+reth-firehose = { workspace = true, optional = true }
+
 # arbitrary
 arbitrary = { workspace = true, features = ["derive"], optional = true }
 
@@ -70,6 +75,7 @@ std = [
 	"reth-zstd-compressors?/std"
 ]
 alloy-compat = ["serde", "dep:alloy-network", "dep:alloy-rpc-types-eth"]
+firehose = ["dep:reth-firehose"]
 reth-core = []
 reth-codec = [
 	"dep:reth-codecs",

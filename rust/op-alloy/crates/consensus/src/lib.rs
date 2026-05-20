@@ -18,6 +18,9 @@ mod reth_codec;
 #[cfg(feature = "alloy-compat")]
 mod alloy_compat;
 
+#[cfg(feature = "firehose")]
+mod firehose;
+
 mod receipts;
 pub use receipts::{
     OpDepositReceipt, OpDepositReceiptWithBloom, OpReceipt, OpReceiptEnvelope, OpTxReceipt,
