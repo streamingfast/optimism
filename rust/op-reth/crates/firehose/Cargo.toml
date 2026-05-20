@@ -1,0 +1,40 @@
+[package]
+name = "reth-optimism-firehose"
+version = "1.11.3"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage = "https://paradigmxyz.github.io/reth"
+repository = "https://github.com/paradigmxyz/reth"
+
+[lints]
+workspace = true
+
+[dependencies]
+# reth (SF fork — see rust/Cargo.toml workspace deps)
+reth-evm.workspace = true
+reth-revm.workspace = true
+reth-errors.workspace = true
+reth-firehose.workspace = true
+reth-primitives-traits.workspace = true
+
+# firehose tracer (crates.io)
+firehose-tracer.workspace = true
+
+# op-reth internal crates
+reth-optimism-evm.workspace = true
+reth-optimism-primitives.workspace = true
+
+# alloy
+alloy-evm.workspace = true
+alloy-consensus.workspace = true
+alloy-primitives.workspace = true
+alloy-op-evm.workspace = true
+
+# op-alloy — needed (transitively, via feature activation) to bring in the
+# `SignatureFields` impl for `OpTxEnvelope` (orphan-rule-driven; see
+# `op-alloy/crates/consensus/src/firehose.rs`).
+op-alloy-consensus = { workspace = true, features = ["firehose"] }
+
+# op-revm
+op-revm.workspace = true
