@@ -401,6 +401,9 @@ reth-transaction-pool = { git = "https://github.com/streamingfast/reth.git", tag
 reth-trie = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-fh-6" }
 reth-trie-common = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-fh-6", default-features = false }
 reth-trie-db = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-fh-6" }
+reth-engine-tree = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-fh-6" }
+reth-execution-cache = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-fh-6" }
+reth-trie-parallel = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-fh-6" }
 
 # ==================== REVM (latest: op-reth versions) ====================
 revm = { version = "40.0.3", default-features = false }

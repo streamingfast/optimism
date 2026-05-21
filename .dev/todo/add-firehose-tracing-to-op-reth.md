@@ -6,6 +6,7 @@ root_git: /Users/maoueh/work/sf/op-reth
 worktree: .worktrees/feature/add-firehose-tracing-to-op-reth
 branch: feature/add-firehose-tracing-to-op-reth
 target_branch: firehose/2.x
+review_round: 2
 
 > **Resume protocol:** read **Dev Feedback** and the **State Tracker** below first, then jump to the
 > step marked `Current`. Ensure that you are in the correct worktree and branch according to preamble here. Update current with Developer feedback and update the tracker after every meaningful change.
@@ -59,12 +60,51 @@ Investigate the difference between https://github.com/streamingfast/base/tree/fi
    live tracing through `ConfigureEvm`, our `OpFirehoseEvmConfig` will pick it up automatically.
    No op-reth-side change is needed today; surfaced here for visibility.
 
+   > _Dev Answer_
+   > This needs to work, live tracing is required, base works, so I want either a confirmation that
+   > it's gonna work in op-reth too or a fix. And No standard reth does not use ExEx, it's installed and the
+   > hook exists but it's not how it's done today.
+
+   > _Resolution_
+   > Live engine-API tracing is now wired through `OpFirehoseEngineValidator` (new) in
+   > `rust/op-reth/crates/firehose/src/engine_validator.rs`. This file is a near-clone of
+   > `streamingfast/reth` `firehose/2.x`'s `crates/engine/tree/src/tree/payload_validator.rs`
+   > (`BasicEngineValidator`) — exactly the same approach base-reth took with its
+   > `base-engine-tree::BaseEngineValidator`. The clone adds a Firehose-enabled twin
+   > `execute_and_trace_block` of the private `execute_block` (`evm_with_env_and_inspector` +
+   > `FirehoseWrappedExecutor::with_hooks(.., OpPreTxAdjust, OpPostTxExtras)`), and patches
+   > `validate_block_with_state` to branch on `reth_firehose::is_tracer_initialized()` —
+   > starting a `FirehoseBlockTracer` guard before execution and calling `mark_verified()`
+   > after post-execution validation. `OpNode::AddOns` now installs the new
+   > `OpFirehoseEngineValidatorBuilder<OpEngineValidatorBuilder>` in place of the upstream
+   > `BasicEngineValidatorBuilder<...>`. The change is contained entirely to op-reth — no
+   > SF reth fork modification needed. The path-name maintenance contract is documented in
+   > the file header of `engine_validator.rs`: when updating the SF reth fork, copy that
+   > file and review the diff.
+
 7. **`firehose-tracer` version:** Pinned to `=5.0.0` per the prompt; matches the version the SF
    reth fork's workspace resolves to.
+
+   > _Dev Answer_
+   > I don't understand this, I had change to use latest version. Remove the pin and bump to latest, reth dependency branch firehose/2.x normally use at least 5.1.x.
+
+   > _Resolution_
+   > `rust/Cargo.toml` now declares `firehose-tracer = "5"` (the same spec SF reth
+   > `firehose/2.x` uses in its workspace). `cargo update -p firehose-tracer` resolved to
+   > the latest published 5.x line (`5.1.1` at the time of this edit). Pin removed.
 
 8. **Workspace `version.workspace = true` not available:** the workspace `[workspace.package]`
    does not declare a `version` field; existing op-reth crates use literal `version = "1.11.3"`.
    The new `reth-optimism-firehose` crate follows the same convention.
+
+   > _Dev Answer_
+   > We follow op-reth lifecycle, right now we track v2.2.4, I prefer our crates follow the public versioning instead of the wrong way of optimism managing their own crates
+
+   > _Resolution_
+   > `rust/op-reth/crates/firehose/Cargo.toml` now sets `version = "2.2.4"` (the public
+   > op-reth release line). The Cargo manifest carries a top-of-file comment documenting
+   > the deliberate divergence from the `"1.11.3"` literal used by sibling
+   > `reth-optimism-*` crates.
 
 ## Spec & Implementation
 
@@ -313,26 +353,33 @@ If the engine-tree path goes solely through `ConfigureEvm`, no further op-reth c
 
 ## State Tracker
 
-**Last Updated:** 2026-05-20
-**Current Step:** Implementation complete — ready for developer review
-**Status:** All build verifications pass (`cargo build -p reth-optimism-node`, `cargo build -p op-reth`, `cargo check -p reth-optimism-node --all-targets`). Awaiting review.
+**Last Updated:** 2026-05-20 (round 2 — request_changes addressed)
+**Current Step:** Round-2 review feedback addressed — ready for developer review
+**Status:** All build verifications still pass (`cargo check -p reth-optimism-firehose`,
+`cargo build -p reth-optimism-node`, `cargo build -p op-reth`,
+`cargo check -p reth-optimism-node --all-targets`). Awaiting review.
 
-| Step                                                                        | Status  | Notes                                                                                                                                                                                                                                                              |
-| --------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Phase 1 — Contextual Understanding                                          | Done    | Explored op-reth crates structure, node.rs, evm, engine; fetched base-reth firehose branch.                                                                                                                                                                        |
-| Phase 2 — Gap Analysis                                                      | Done    | Key gap: reth fork switch needed; OP type-name mappings TBD at implementation time.                                                                                                                                                                                |
-| Phase 3 — Challenging Dialogue                                              | Skipped | No ambiguous decisions requiring user input; base-reth is a direct reference.                                                                                                                                                                                      |
-| Phase 4 — Specification Writing                                             | Done    | Initial spec with 8-step implementation plan written.                                                                                                                                                                                                              |
-| Phase 5 — Spec Review (initial)                                             | Done    | Developer flagged the spec referenced reth v1.x (tag `v1.11.4-fh-1`) but op-reth tracks v2; SF fork branch is `firehose/2.x` (commit `68241c23...`, rebased on op-reth's pinned `88505c7f...`).                                                                    |
-| Phase 4 — Specification Writing (replan, v2)                                | Done    | Updated dep references to `streamingfast/reth.git` branch `firehose/2.x`; verified API surface (`ChainHooks`, `FirehoseEvmConfig`, `with_hooks` arg order); corrected `root_git` and `target_branch` preamble; confirmed `with_hooks` order is `(adjust, extras)`. |
-| Phase 5 — Spec Review (replan)                                              | Done    | Developer approved spec; ready state set.                                                                                                                                                                                                                          |
-| Impl Step 1 — Switch reth fork + add firehose deps (`rust/Cargo.toml`)      | Done    | All ~70 `paradigmxyz/reth, rev=88505c7f...` entries replaced with `streamingfast/reth.git, branch="firehose/2.x"`. Added `reth-firehose` and `firehose-tracer = "=5.0.0"` workspace deps. Added `reth-optimism-firehose` path workspace dep and member.             |
-| Impl Step 2 — Confirm SF reth fork API surface                              | Done    | Verified: `FirehoseWrappedExecutor::with_hooks(inner, withdrawals, adjust, extras)`, `FirehoseBlockExecutor::new_with_chain_hooks`, `ChainHooks` trait. OP types confirmed: `OpEvm`, `OpEvmFactory<OpTx>` from `alloy-op-evm`, `OpSpecId` from `op-revm`.            |
-| Impl Step 3 — Create `reth-optimism-firehose` crate                         | Done    | `Cargo.toml`, `src/lib.rs`, `src/extras.rs` (`OpPostTxExtras`, `OpPreTxAdjust`), `src/evm_config.rs` (`OpChainHooks`, `OpFirehoseEvmConfig`), `README.md`. Implements `ConfigureEvm`, `ConfigureEngineEvm`, and `ConfigurePostExecEvm` for the wrapper.              |
-| Impl Step 3.5 — `SignatureFields for OpTxEnvelope` (orphan workaround)      | Done    | Added feature-gated impl in `op-alloy-consensus` (new `firehose` feature). See Implementor Note #1.                                                                                                                                                                |
-| Impl Step 4 — Wire into op-reth node (`OpExecutorBuilder`)                  | Done    | `OpExecutorBuilder::EVM` now `OpFirehoseEvmConfig<OpEvmConfig<...>>`; `build_evm` returns the wrapped config. Imported `reth_optimism_firehose::OpFirehoseEvmConfig`. Added `reth-optimism-firehose` to node Cargo.toml.                                              |
-| Impl Step 4b — Wire CLI components (`reth-optimism-cli`)                    | Done    | `app.rs`'s `components` lambda wrapped with `OpFirehoseEvmConfig::new(...)`. Test helper `node/tests/it/builder.rs` adjusted to destructure `.inner` of the wrapper.                                                                                                |
-| Impl Step 5 — Verify build                                                  | Done    | `cargo check -p reth-optimism-firehose`, `cargo build -p reth-optimism-node`, `cargo build -p op-reth`, `cargo check -p reth-optimism-node --all-targets` all pass. Workspace-wide `cargo check --workspace` fails only on `kona-hardforks` build script (unrelated — looks for a file outside our worktree).  |
-| Impl Step 6 — Verify live engine-API execution path                         | Done    | Inspected SF reth's engine-tree (`payload_validator.rs::execute_block`); it constructs the executor via `create_executor` directly, not `batch_executor`, so live firehose tracing is NOT inherited automatically. See Implementor Note #6 — no op-reth-side change needed; SF reth handles live via the `exex` runner.   |
-| Impl Step 7 — Add `CHANGELOG.sf.md`                                         | Done    | `rust/op-reth/CHANGELOG.sf.md` documents the integration under `## Unreleased`.                                                                                                                                                                                    |
-| Implementation complete                                                     | Current | All steps complete; build verifications pass; task ready for developer review.                                                                                                                                                                                     |
+| Step                                                                   | Status  | Notes                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 1 — Contextual Understanding                                     | Done    | Explored op-reth crates structure, node.rs, evm, engine; fetched base-reth firehose branch.                                                                                                                                                                                                                             |
+| Phase 2 — Gap Analysis                                                 | Done    | Key gap: reth fork switch needed; OP type-name mappings TBD at implementation time.                                                                                                                                                                                                                                     |
+| Phase 3 — Challenging Dialogue                                         | Skipped | No ambiguous decisions requiring user input; base-reth is a direct reference.                                                                                                                                                                                                                                           |
+| Phase 4 — Specification Writing                                        | Done    | Initial spec with 8-step implementation plan written.                                                                                                                                                                                                                                                                   |
+| Phase 5 — Spec Review (initial)                                        | Done    | Developer flagged the spec referenced reth v1.x (tag `v1.11.4-fh-1`) but op-reth tracks v2; SF fork branch is `firehose/2.x` (commit `68241c23...`, rebased on op-reth's pinned `88505c7f...`).                                                                                                                         |
+| Phase 4 — Specification Writing (replan, v2)                           | Done    | Updated dep references to `streamingfast/reth.git` branch `firehose/2.x`; verified API surface (`ChainHooks`, `FirehoseEvmConfig`, `with_hooks` arg order); corrected `root_git` and `target_branch` preamble; confirmed `with_hooks` order is `(adjust, extras)`.                                                      |
+| Phase 5 — Spec Review (replan)                                         | Done    | Developer approved spec; ready state set.                                                                                                                                                                                                                                                                               |
+| Impl Step 1 — Switch reth fork + add firehose deps (`rust/Cargo.toml`) | Done    | All ~70 `paradigmxyz/reth, rev=88505c7f...` entries replaced with `streamingfast/reth.git, branch="firehose/2.x"`. Added `reth-firehose` and `firehose-tracer = "=5.0.0"` workspace deps. Added `reth-optimism-firehose` path workspace dep and member.                                                                 |
+| Impl Step 2 — Confirm SF reth fork API surface                         | Done    | Verified: `FirehoseWrappedExecutor::with_hooks(inner, withdrawals, adjust, extras)`, `FirehoseBlockExecutor::new_with_chain_hooks`, `ChainHooks` trait. OP types confirmed: `OpEvm`, `OpEvmFactory<OpTx>` from `alloy-op-evm`, `OpSpecId` from `op-revm`.                                                               |
+| Impl Step 3 — Create `reth-optimism-firehose` crate                    | Done    | `Cargo.toml`, `src/lib.rs`, `src/extras.rs` (`OpPostTxExtras`, `OpPreTxAdjust`), `src/evm_config.rs` (`OpChainHooks`, `OpFirehoseEvmConfig`), `README.md`. Implements `ConfigureEvm`, `ConfigureEngineEvm`, and `ConfigurePostExecEvm` for the wrapper.                                                                 |
+| Impl Step 3.5 — `SignatureFields for OpTxEnvelope` (orphan workaround) | Done    | Added feature-gated impl in `op-alloy-consensus` (new `firehose` feature). See Implementor Note #1.                                                                                                                                                                                                                     |
+| Impl Step 4 — Wire into op-reth node (`OpExecutorBuilder`)             | Done    | `OpExecutorBuilder::EVM` now `OpFirehoseEvmConfig<OpEvmConfig<...>>`; `build_evm` returns the wrapped config. Imported `reth_optimism_firehose::OpFirehoseEvmConfig`. Added `reth-optimism-firehose` to node Cargo.toml.                                                                                                |
+| Impl Step 4b — Wire CLI components (`reth-optimism-cli`)               | Done    | `app.rs`'s `components` lambda wrapped with `OpFirehoseEvmConfig::new(...)`. Test helper `node/tests/it/builder.rs` adjusted to destructure `.inner` of the wrapper.                                                                                                                                                    |
+| Impl Step 5 — Verify build                                             | Done    | `cargo check -p reth-optimism-firehose`, `cargo build -p reth-optimism-node`, `cargo build -p op-reth`, `cargo check -p reth-optimism-node --all-targets` all pass. Workspace-wide `cargo check --workspace` fails only on `kona-hardforks` build script (unrelated — looks for a file outside our worktree).           |
+| Impl Step 6 — Verify live engine-API execution path                    | Done    | Inspected SF reth's engine-tree (`payload_validator.rs::execute_block`); it constructs the executor via `create_executor` directly, not `batch_executor`, so live firehose tracing is NOT inherited automatically. See Implementor Note #6 — no op-reth-side change needed; SF reth handles live via the `exex` runner. |
+| Impl Step 7 — Add `CHANGELOG.sf.md`                                    | Done    | `rust/op-reth/CHANGELOG.sf.md` documents the integration under `## Unreleased`.                                                                                                                                                                                                                                         |
+| Implementation complete (round 1)                                      | Done    | All steps complete; build verifications pass; submitted for review.                                                                                                                                                                                                                                                     |
+| Round 2 — `firehose-tracer` pin removed                                | Done    | `rust/Cargo.toml` now declares `firehose-tracer = "5"` (matching SF reth `firehose/2.x`); `cargo update -p firehose-tracer` resolved to `5.1.1`.                                                                                                                                                                         |
+| Round 2 — `reth-optimism-firehose` version → `2.2.4`                   | Done    | `rust/op-reth/crates/firehose/Cargo.toml`: `version = "2.2.4"`, with a comment documenting the deliberate divergence from sibling crates' `1.11.3` literals.                                                                                                                                                            |
+| Round 2 — Live engine-API tracing wired via cloned validator           | Done    | New file `rust/op-reth/crates/firehose/src/engine_validator.rs` (near-clone of SF reth `firehose/2.x`'s `payload_validator.rs`). Adds Firehose-enabled twin `execute_and_trace_block`, branches `validate_block_with_state` on `is_tracer_initialized()`, manages a `FirehoseBlockTracer` guard around execution + post-validation (`mark_verified` on success, drop-side `mark_failed` on early return). New `OpFirehoseEngineValidatorBuilder` exported from the crate. `OpNode::AddOns` updated to install it in place of the upstream `BasicEngineValidatorBuilder`. `OpAddOns` default `EVB` parameter also updated. Required workspace deps added: `reth-engine-tree`, `reth-execution-cache`, `reth-trie-parallel`. `CHANGELOG.sf.md` extended. |
+| Round 2 — Verify build                                                 | Done    | `cargo check -p reth-optimism-firehose` (clean, 0 warnings), `cargo build -p reth-optimism-node`, `cargo build -p op-reth`, `cargo check -p reth-optimism-node --all-targets` all pass.                                                                                                                                 |
+| Round 2 complete                                                       | Current | All round-2 dev feedback addressed; build verifications pass; task ready for re-review.                                                                                                                                                                                                                                 |

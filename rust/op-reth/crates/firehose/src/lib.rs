@@ -12,3 +12,6 @@ pub use extras::{OpPostTxExtras, OpPreTxAdjust};
 
 mod evm_config;
 pub use evm_config::{OpChainHooks, OpFirehoseEvmConfig};
+
+mod engine_validator;
+pub use engine_validator::{OpFirehoseEngineValidator, OpFirehoseEngineValidatorBuilder};
