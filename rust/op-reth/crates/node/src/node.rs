@@ -29,15 +29,15 @@ use reth_node_builder::{
     },
     node::{FullNodeTypes, NodeTypes},
     rpc::{
-        BasicEngineValidatorBuilder, EngineApiBuilder, EngineValidatorAddOn,
-        EngineValidatorBuilder, EthApiBuilder, Identity, PayloadValidatorBuilder, RethRpcAddOns,
-        RethRpcMiddleware, RethRpcServerHandles, RpcAddOns, RpcContext, RpcHandle,
+        EngineApiBuilder, EngineValidatorAddOn, EngineValidatorBuilder, EthApiBuilder, Identity,
+        PayloadValidatorBuilder, RethRpcAddOns, RethRpcMiddleware, RethRpcServerHandles,
+        RpcAddOns, RpcContext, RpcHandle,
     },
 };
 use reth_optimism_chainspec::{OpChainSpec, OpHardfork};
 use reth_optimism_consensus::OpBeaconConsensus;
 use reth_optimism_evm::{ConfigurePostExecEvm, OpEvmConfig, OpRethReceiptBuilder};
-use reth_optimism_firehose::OpFirehoseEvmConfig;
+use reth_optimism_firehose::{OpFirehoseEngineValidatorBuilder, OpFirehoseEvmConfig};
 use reth_optimism_forks::OpHardforks;
 use reth_optimism_payload_builder::{
     OpBuiltPayload, OpExecData, OpPayloadBuilderAttributes, OpPayloadPrimitives,
@@ -329,7 +329,7 @@ where
         OpEthApiBuilder,
         OpEngineValidatorBuilder,
         OpEngineApiBuilder<OpEngineValidatorBuilder>,
-        BasicEngineValidatorBuilder<OpEngineValidatorBuilder>,
+        OpFirehoseEngineValidatorBuilder<OpEngineValidatorBuilder>,
     >;
 
     fn components_builder(&self) -> Self::ComponentsBuilder {
@@ -375,7 +375,7 @@ pub struct OpAddOns<
     EthB: EthApiBuilder<N>,
     PVB,
     EB = OpEngineApiBuilder<PVB>,
-    EVB = BasicEngineValidatorBuilder<PVB>,
+    EVB = OpFirehoseEngineValidatorBuilder<PVB>,
     RpcMiddleware = Identity,
 > {
     /// Rpc add-ons responsible for launching the RPC servers and instantiating the RPC handlers

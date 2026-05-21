@@ -338,6 +338,7 @@ reth-downloaders = { git = "https://github.com/streamingfast/reth.git", branch =
 reth-e2e-test-utils = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
 reth-engine-local = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
 reth-engine-primitives = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
+reth-engine-tree = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
 reth-errors = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
 reth-eth-wire = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
 reth-eth-wire-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
@@ -350,6 +351,7 @@ reth-evm = { git = "https://github.com/streamingfast/reth.git", branch = "fireho
 reth-evm-ethereum = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
 reth-exex = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
 reth-exex-test-utils = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
+reth-execution-cache = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
 reth-execution-errors = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
 reth-execution-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
 reth-fs-util = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
@@ -391,12 +393,14 @@ reth-transaction-pool = { git = "https://github.com/streamingfast/reth.git", bra
 reth-trie = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
 reth-trie-common = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
 reth-trie-db = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
+reth-trie-parallel = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
 
 # StreamingFast Firehose instrumentation crate (lives in the SF reth fork only).
 reth-firehose = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
 
 # ==================== FIREHOSE TRACER (crates.io) ====================
-firehose-tracer = "=5.0.0"
+# Track the same major as the SF reth fork (`firehose/2.x` declares `firehose-tracer = "5"`).
+firehose-tracer = "5"
 
 # ==================== REVM (latest: op-reth versions) ====================
 revm = { version = "38.0.0", default-features = false }
