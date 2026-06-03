@@ -186,6 +186,15 @@ rand_chacha.opt-level = 3
 rand_xorshift.opt-level = 3
 unarray.opt-level = 3
 
+# Firehose addition (mirrors streamingfast/reth `firehose/2.x` Cargo.toml): silence the debug-only
+# `wait_cloned must not be called from a rayon worker thread` assertion in `reth-chain-state`'s
+# deferred-trie path. In debug builds it floods the logs (hundreds of caught, non-fatal rayon
+# worker panics) during live engine-API execution; it is compiled out in release. Disabling
+# debug-assertions for just this package keeps debug builds usable. The underlying execution-pool
+# threading question is tracked upstream in the SF reth fork.
+[profile.dev.package.reth-chain-state]
+debug-assertions = false
+
 [profile.fast-build]
 inherits = "dev"
 opt-level = 0
