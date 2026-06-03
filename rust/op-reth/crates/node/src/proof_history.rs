@@ -6,6 +6,7 @@ use crate::{
 };
 use eyre::ErrReport;
 use futures_util::FutureExt;
+use reth_chainspec::EthChainSpec;
 use reth_db::DatabaseEnv;
 use reth_db_api::database_metrics::DatabaseMetrics;
 use reth_node_builder::{FullNodeComponents, NodeBuilder, WithLaunchContext};
@@ -29,6 +30,12 @@ pub async fn launch_node(
     builder: WithLaunchContext<NodeBuilder<DatabaseEnv, OpChainSpec>>,
     args: RollupArgs,
 ) -> eyre::Result<(), ErrReport> {
+    // Record the chain config on the Firehose tracer (emits `FIRE INIT`) before the node launches,
+    // so it happens ahead of the first engine-API payload. The SF reth fork does this in its
+    // Firehose ExEx, which `op-reth` does not use — see `reth_optimism_firehose::init_blockchain`.
+    // No-op when the tracer is not initialized.
+    reth_optimism_firehose::init_blockchain(builder.config().chain.chain_id());
+
     if !args.proofs_history {
         let handle = builder.node(OpNode::new(args)).launch_with_debug_capabilities().await?;
         return handle.node_exit_future.await;

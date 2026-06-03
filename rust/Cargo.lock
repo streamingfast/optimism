@@ -7910,8 +7910,10 @@ version = "1.11.3"
 dependencies = [
  "clap",
  "eyre",
+ "firehose-tracer",
  "reth-cli-util",
  "reth-db",
+ "reth-firehose",
  "reth-node-builder",
  "reth-optimism-chainspec",
  "reth-optimism-cli",
