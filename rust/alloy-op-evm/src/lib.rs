@@ -32,7 +32,8 @@ use op_revm::{
     precompiles::OpPrecompiles,
 };
 use revm::{
-    Context, ExecuteEvm, InspectEvm, Inspector, Journal, MainContext, SystemCallEvm,
+    Context, ExecuteEvm, InspectEvm, InspectSystemCallEvm, Inspector, Journal, MainContext,
+    SystemCallEvm,
     context::{BlockEnv, CfgEnv, DBErrorMarker, TxEnv},
     context_interface::{
         Transaction,
@@ -316,7 +317,16 @@ where
         contract: Address,
         data: Bytes,
     ) -> Result<ResultAndState<Self::HaltReason>, Self::Error> {
-        self.inner.system_call_with_caller(caller, contract, data).map_err(map_op_err)
+        // Honor inspector mode for block-level system calls (EIP-4788 beacon root, EIP-2935
+        // parent block hash, etc.) the same way `transact_raw` does for transactions. Without
+        // the inspecting variant the Firehose tracer never sees these calls, so they are absent
+        // from the block trace's `systemCalls`. Mirrors the SF `alloy-evm` EthEvm fix.
+        let result = if self.inspect {
+            self.inner.inspect_system_call_with_caller(caller, contract, data)
+        } else {
+            self.inner.system_call_with_caller(caller, contract, data)
+        };
+        result.map_err(map_op_err)
     }
 
     fn finish(self) -> (Self::DB, EvmEnv<Self::Spec, Self::BlockEnv>) {
