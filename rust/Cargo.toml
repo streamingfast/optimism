@@ -685,3 +685,13 @@ snmalloc-rs = { version = "0.3.8", features = ["build_cc"] }
 
 # K/V database
 rocksdb = { version = "0.24.0", default-features = false }
+
+[patch.crates-io]
+## Firehose additions
+# SF fork of alloy-evm that routes block-level system calls (EIP-4788 beacon root,
+# EIP-2935 parent block hash, OP withdrawals, etc.) through the revm Inspector, so the
+# Firehose tracer can record them as `systemCalls` in the block trace. Without this patch
+# op-reth resolves stock alloy-evm and emits zero systemCalls (the SF reth fork applies the
+# same patch, but git-dependency patch sections do not propagate to this workspace root).
+# See https://github.com/alloy-rs/evm/pull/323 for the upstream PR.
+alloy-evm = { git = "https://github.com/streamingfast/evm.git", branch = "sf/v0.34.0" }
