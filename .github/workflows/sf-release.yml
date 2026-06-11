@@ -1,9 +1,12 @@
 # StreamingFast Docker image build, push and (on tag) release.
 #
 # Maintained by StreamingFast and intentionally kept separate from upstream CI
-# so that upstream merges stay clean. Triggers only on `*-fh*` tags and manual
-# dispatch — never on pull requests or branch pushes — so it cannot collide with
-# upstream workflows and only maintainers (who push tags) can run it.
+# so that upstream merges stay clean.
+#
+# Triggers: `firehose/*` branch pushes, `*-fh*` tags, pull requests and manual
+# dispatch. Pull requests opened from a fork get a read-only GITHUB_TOKEN, so the
+# login/push steps are skipped for them (the image still builds, to validate the
+# Dockerfile); same-repo ("inner") PRs and pushes authenticate and push normally.
 #
 # Single architecture (linux/amd64): the op-reth `maxperf` full-node build is too
 # heavy to reliably build on GitHub-hosted arm64 runners, so we do not produce a
@@ -13,8 +16,11 @@ name: Build, push and release (if tag)
 
 on:
   push:
+    branches:
+      - "firehose/*"
     tags:
       - "*-fh*"
+  pull_request:
   workflow_dispatch:
 
 env:
@@ -23,11 +29,19 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     permissions:
       contents: read
       packages: write
+
+    env:
+      # Pushes (branch/tag), same-repo PRs and manual dispatch can authenticate
+      # to ghcr and push images. A PR opened from a fork gets a read-only
+      # GITHUB_TOKEN with no `packages: write`, so we must skip login and push for
+      # it — the build still runs to validate the Dockerfile compiles. The value
+      # is the string "true"/"false".
+      IS_EXTERNAL_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
     steps:
       - name: Checkout repository
@@ -37,6 +51,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to the Container registry
+        if: env.IS_EXTERNAL_PR != 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -50,6 +65,10 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             version=${GITHUB_REF#refs/tags/}
           fi
+          # Docker tags forbid `/`; a tag (or ref) containing slashes would make
+          # the `<sha>-<version>` tag invalid. Match docker/metadata-action's own
+          # sanitization by replacing `/` with `-`.
+          version=${version//\//-}
           echo "VERSION=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Generate docker tags/labels from github build context
@@ -57,17 +76,23 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # `type=sha` produces a stable `<short-sha>` tag that the `release` job
-          # below uses as a deterministic image reference to `docker cp` the
-          # binary out of. We build a single architecture and only on tags or
-          # manual dispatch, so there is no concurrent branch build to race with
-          # and no per-arch suffix tag is required.
+          # The version-suffixed sha tag uniquely identifies the image for a given
+          # build, appending the extracted version (either `edge` or the tag). This
+          # avoids a race condition when a tag and its branch are pushed together:
+          # both builds run on the same commit and would otherwise push the same
+          # `<sha>` tag, with the last writer winning and possibly clobbering the
+          # tag build's version label. The `<sha>-<version>` tag stays distinct
+          # (`<sha>-edge` vs `<sha>-v1.2.3-fh3.0`), and the `release` job below
+          # reads `<sha>-<tag>` so it always picks up the correct image.
           tags: |
             type=ref,event=tag,prefix=
+            type=ref,event=branch
+            type=ref,event=pr
             type=sha,prefix=
+            type=sha,prefix=,suffix=-${{ steps.extract-version.outputs.VERSION }}
             type=edge
           flavor: |
-            latest=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'beta') && !contains(github.ref, 'rc') }}
+            latest=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'beta') && !contains(github.ref, 'rc') && !contains(github.ref, 'alpha') }}
 
       - name: Build and push Docker image (linux/amd64)
         uses: docker/build-push-action@v6
@@ -75,7 +100,7 @@ jobs:
           context: rust
           file: ./rust/op-reth/Dockerfile.sf
           platforms: linux/amd64
-          push: true
+          push: ${{ env.IS_EXTERNAL_PR != 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: false
@@ -85,7 +110,7 @@ jobs:
   release:
     if: startsWith(github.ref, 'refs/tags/')
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     permissions:
       contents: write
@@ -101,7 +126,11 @@ jobs:
       - name: Extract image
         id: image
         run: |
-          echo "ID=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          version=${GITHUB_REF#refs/tags/}
+          # Match the sanitization done in the build job's "Extract version" step
+          # so this ID resolves to the same `<sha>-<version>` image tag.
+          version=${version//\//-}
+          echo "ID=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${GITHUB_SHA::7}-${version}" >> "$GITHUB_OUTPUT"
 
       - name: Extract assets
         run: |
@@ -123,6 +152,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.changelog.outputs.changelog }}
-          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'rc') || contains(github.ref, 'alpha') }}
           files: |
             ./op-reth_linux_amd64
