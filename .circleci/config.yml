@@ -15,7 +15,7 @@ parameters:
   # Provenance is verified by .github/workflows/security.yml.
   rust_base_image:
     type: string
-    default: us-docker.pkg.dev/oplabs-tools-artifacts/images/ci-base-clang@sha256:00f641689576d7393d83f6fd49fe1592006148305999f1ba2fc4f1f9d2e8a342
+    default: us-docker.pkg.dev/oplabs-tools-artifacts/images/ci-base-clang@sha256:6b421a05805bc2b7b2b1e72a4418f8984444c1be9ec31d620cabec7acff0a36f
   base_image:
     type: string
     default: default
@@ -54,9 +54,6 @@ parameters:
     type: boolean
     default: false
   heavy_fuzz_dispatch:
-    type: boolean
-    default: false
-  ai_contracts_test_dispatch:
     type: boolean
     default: false
   rust_ci_dispatch:
@@ -156,7 +153,6 @@ jobs:
             c-stale_check_dispatch: << pipeline.parameters.stale_check_dispatch >>
             c-contracts_coverage_dispatch: << pipeline.parameters.contracts_coverage_dispatch >>
             c-heavy_fuzz_dispatch: << pipeline.parameters.heavy_fuzz_dispatch >>
-            c-ai_contracts_test_dispatch: << pipeline.parameters.ai_contracts_test_dispatch >>
             c-rust_ci_dispatch: << pipeline.parameters.rust_ci_dispatch >>
             c-rust_e2e_dispatch: << pipeline.parameters.rust_e2e_dispatch >>
             c-l2_fork_test_dispatch: << pipeline.parameters.l2_fork_test_dispatch >>
@@ -177,6 +173,15 @@ jobs:
             c-contracts_changed: "^(packages/contracts-bedrock|\\.circleci|\\.github|ops/check-changed)/|^(package\\.json|mise\\.toml)$"
             c-docs_changes_detected: "^docs/public-docs/"
             c-rust_changes_detected: "^(rust|op-e2e|\\.circleci)/"
+      # Safer "docs-only" detection: true iff EVERY changed file is under docs/public-docs/.
+      # Using an inclusion (all-match) check instead of an exclusion of known code categories
+      # makes the fast path safe-by-default — any path not enumerated by the patterns above
+      # still falls through to the full main workflow.
+      - run:
+          name: Detect docs-only changes (all-match)
+          command: .circleci/scripts/collect-params.sh detect_all
+          environment:
+            c-only_docs_changes: "^docs/public-docs/"
       # Decision tree: determines which workflows to enable based on trigger, branch, and params.
       #
       # Helpers (defined in workflow-helpers.sh):
@@ -209,7 +214,6 @@ jobs:
                   build_four_hours) run scheduled_todo_issues scheduled_cannon_full_tests ;;
                   build_daily)      run scheduled_preimage_reproducibility scheduled_stale_check scheduled_heavy_fuzz_tests ;;
                   build_weekly)     run scheduled_weekly_tests scheduled_kona_link_checker ;;
-                  build_mon_thu)    run ai_contracts_test ;;
                 esac
                 ;;
 
@@ -229,8 +233,8 @@ jobs:
                 #    Docs-only changes skip main/release entirely.
                 # ---------------------------------------------------------
                 elif [[ "${BRANCH}" != "develop" && ! "${BRANCH}" =~ ^gh-readonly-queue/ ]]; then
-                  if is_true docs_changes_detected && ! is_true contracts_changed && ! is_true rust_changes_detected; then
-                    run docs_ci
+                  if is_true only_docs_changes; then
+                    run ci_gate_skip
                     run contracts_feature_tests_short
                     run rust_ci_gate_short
                     run rust_e2e_gate_skip
@@ -249,9 +253,6 @@ jobs:
                       run rust_ci_gate_short
                       run rust_e2e_gate_skip
                     fi
-                    if is_true docs_changes_detected; then
-                      run docs_ci
-                    fi
                   fi
 
                 # 2. Merge queue (pre-merge validation)
@@ -268,9 +269,6 @@ jobs:
                   else
                     run rust_ci_gate_short
                     run rust_e2e_gate_skip
-                  fi
-                  if is_true docs_changes_detected; then
-                    run docs_ci
                   fi
 
                 # 3. After merge (develop push)
@@ -291,9 +289,6 @@ jobs:
                     run rust_ci_gate_short
                     run rust_e2e_gate_skip
                   fi
-                  if is_true docs_changes_detected; then
-                    run docs_ci
-                  fi
                 fi
                 ;;
 
@@ -309,7 +304,6 @@ jobs:
                 if is_true reproducibility_dispatch;  then run scheduled_preimage_reproducibility; fi
                 if is_true stale_check_dispatch;      then run scheduled_stale_check; fi
                 if is_true heavy_fuzz_dispatch;       then run scheduled_heavy_fuzz_tests; fi
-                if is_true ai_contracts_test_dispatch; then run ai_contracts_test; fi
                 if is_true l2_fork_test_dispatch;     then run l2_fork_test; fi
                 if is_true rust_ci_dispatch;          then run rust_ci; fi
                 if is_true rust_e2e_dispatch;         then run rust_e2e_ci; fi
@@ -321,7 +315,7 @@ jobs:
 
             # Params to forward to continuation configs (everything else is stripped)
             finalize "c-default_docker_image,c-rust_base_image,c-base_image,c-github-event-base64,c-go-cache-version,c-rust_files_changed"
-      # Deep-merges the 4 continuation YAML configs (main, docs-ci, rust-ci, rust-e2e)
+      # Deep-merges the 3 continuation YAML configs (main, rust-ci, rust-e2e)
       # into /tmp/merged-config.yml using yq. Later files win on key conflicts.
       # explode(.) resolves YAML anchors/aliases so the output is self-contained.
       - run:

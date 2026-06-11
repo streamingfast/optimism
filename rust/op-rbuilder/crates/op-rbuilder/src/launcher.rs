@@ -22,7 +22,7 @@ use reth_optimism_node::{
     node::{OpAddOns, OpAddOnsBuilder, OpEngineValidatorBuilder, OpPoolBuilder},
 };
 use reth_transaction_pool::TransactionPool;
-use std::{marker::PhantomData, sync::Arc};
+use std::marker::PhantomData;
 
 pub fn launch() -> Result<()> {
     let cli = Cli::parsed();
@@ -95,7 +95,7 @@ where
 {
     async fn entrypoint(
         self,
-        builder: WithLaunchContext<NodeBuilder<Arc<DatabaseEnv>, OpChainSpec>>,
+        builder: WithLaunchContext<NodeBuilder<DatabaseEnv, OpChainSpec>>,
         builder_args: OpRbuilderArgs,
     ) -> Result<()> {
         let builder_config = BuilderConfig::<B::Config>::try_from(builder_args.clone())
@@ -139,9 +139,9 @@ where
                                 rollup_args.enable_tx_conditional
                                     || builder_args.enable_revert_protection,
                             )
-                            .with_supervisor(
-                                rollup_args.supervisor_http.clone(),
-                                rollup_args.supervisor_safety_level,
+                            .with_interop(
+                                rollup_args.interop_http.clone(),
+                                rollup_args.interop_safety_level,
                             ),
                     )
                     .payload(B::new_service(builder_config)?),
@@ -172,7 +172,7 @@ where
                     tracing::info!("Logging pool transactions");
                     let listener = ctx.pool.all_transactions_event_listener();
                     let task = monitor_tx_pool(listener, reverted_cache_copy);
-                    ctx.task_executor.spawn_critical("txlogging", task);
+                    ctx.task_executor.spawn_critical_task("txlogging", task);
                 }
                 Ok(())
             })

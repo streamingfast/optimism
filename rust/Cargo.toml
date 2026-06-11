@@ -53,6 +53,9 @@ members = [
 
   # Op-Revm
   "op-revm/",
+
+  # Revm execution-environment integration tests
+  "revm-ee-tests/",
 ]
 default-members = [
   "kona/bin/host",
@@ -329,83 +332,83 @@ reth-primitives-traits = { version = "0.3.1", default-features = false }
 reth-rpc-traits = { version = "0.3.1", default-features = false }
 reth-zstd-compressors = { version = "0.3.1", default-features = false }
 
-# ==================== RETH CRATES (git: streamingfast/reth branch firehose/2.x, rebased on upstream 88505c7fcbfdebfd3b56d88c86b62e950043c6c4) ====================
-reth = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-basic-payload-builder = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-chain-state = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-chainspec = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-cli = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-cli-commands = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-cli-runner = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-cli-util = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-consensus = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-consensus-common = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-db = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-db-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-db-common = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-downloaders = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-e2e-test-utils = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-engine-local = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-engine-primitives = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-engine-tree = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-errors = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-eth-wire = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-eth-wire-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-ethereum = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-ethereum-cli = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-ethereum-consensus = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-ethereum-forks = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-ethereum-primitives = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-evm = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-evm-ethereum = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-exex = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-exex-test-utils = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-execution-cache = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-execution-errors = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-execution-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-fs-util = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-metrics = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-network = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-network-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-network-peers = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-node-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-node-builder = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-node-core = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-node-ethereum = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-node-events = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-node-metrics = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-payload-builder = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-payload-builder-primitives = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-payload-primitives = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-payload-util = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-payload-validator = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-provider = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-prune = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-prune-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-revm = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-rpc = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-rpc-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-rpc-builder = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-rpc-engine-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-rpc-eth-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-rpc-eth-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-rpc-server-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-stages = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-stages-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-static-file = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-static-file-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-storage-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-storage-errors = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-tasks = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-tracing = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-transaction-pool = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-trie = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-trie-common = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x", default-features = false }
-reth-trie-db = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
-reth-trie-parallel = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
+# ==================== RETH CRATES (git: streamingfast/reth tag v2.3.0-alpha.81c0261-fh-1, rebased on upstream 81c026181e96ef33a823f3ef4d2a28940e9fa4fe) ====================
+reth = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-basic-payload-builder = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-chain-state = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-chainspec = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-cli = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-cli-commands = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-cli-runner = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-cli-util = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-consensus = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-consensus-common = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-db = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-db-api = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-db-common = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-downloaders = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-e2e-test-utils = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-engine-local = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-engine-primitives = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-engine-tree = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-errors = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-eth-wire = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-eth-wire-types = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-ethereum = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-ethereum-cli = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-ethereum-consensus = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-ethereum-forks = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-ethereum-primitives = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-evm = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-evm-ethereum = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-exex = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-exex-test-utils = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-execution-cache = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-execution-errors = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-execution-types = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-fs-util = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-metrics = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-network = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-network-api = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-network-peers = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-node-api = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-node-builder = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-node-core = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-node-ethereum = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-node-events = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-node-metrics = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-payload-builder = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-payload-builder-primitives = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-payload-primitives = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-payload-util = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-payload-validator = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-provider = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-prune = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-prune-types = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-revm = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-rpc = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-rpc-api = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-rpc-builder = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-rpc-engine-api = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-rpc-eth-api = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-rpc-eth-types = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-rpc-server-types = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-stages = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-stages-types = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-static-file = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-static-file-types = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-storage-api = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-storage-errors = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-tasks = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-tracing = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-transaction-pool = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-trie = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-trie-common = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1", default-features = false }
+reth-trie-db = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
+reth-trie-parallel = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
 
 # StreamingFast Firehose instrumentation crate (lives in the SF reth fork only).
-reth-firehose = { git = "https://github.com/streamingfast/reth.git", branch = "firehose/2.x" }
+reth-firehose = { git = "https://github.com/streamingfast/reth.git", tag = "v2.3.0-alpha.81c0261-fh-1" }
 
 # ==================== FIREHOSE TRACER (crates.io) ====================
 # Track the same major as the SF reth fork (`firehose/2.x` declares `firehose-tracer = "5"`).
@@ -424,57 +427,57 @@ revm-inspectors = "0.39.0"
 
 # ==================== ALLOY ====================
 alloy-chains = { version = "0.2.33", default-features = false }
-alloy-dyn-abi = "1.5.6"
+alloy-dyn-abi = "1.6.0"
 alloy-eip2124 = { version = "0.2.0", default-features = false }
-alloy-eip7928 = { version = "0.3.4", default-features = false }
+alloy-eip7928 = { version = "0.3.7", default-features = false }
 alloy-evm = { version = "0.34.0", default-features = false }
-alloy-primitives = { version = "1.5.6", default-features = false, features = [
+alloy-primitives = { version = "1.6.0", default-features = false, features = [
   "map-foldhash",
 ] }
 alloy-rlp = { version = "0.3.13", default-features = false, features = [
   "core-net",
 ] }
-alloy-sol-macro = "1.5.6"
-alloy-sol-types = { version = "1.5.6", default-features = false }
+alloy-sol-macro = "1.6.0"
+alloy-sol-types = { version = "1.6.0", default-features = false }
 alloy-trie = { version = "0.9.4", default-features = false }
 
 alloy-hardforks = { version = "0.4.7", default-features = false }
 
-alloy-consensus = { version = "2.0.4", default-features = false }
-alloy-contract = { version = "2.0.4", default-features = false }
-alloy-eips = { version = "2.0.4", default-features = false }
-alloy-genesis = { version = "2.0.4", default-features = false }
-alloy-json-rpc = { version = "2.0.4", default-features = false }
-alloy-network = { version = "2.0.4", default-features = false }
-alloy-network-primitives = { version = "2.0.4", default-features = false }
-alloy-node-bindings = { version = "2.0.4", default-features = false }
-alloy-provider = { version = "2.0.4", features = [
+alloy-consensus = { version = "2.0.5", default-features = false }
+alloy-contract = { version = "2.0.5", default-features = false }
+alloy-eips = { version = "2.0.5", default-features = false }
+alloy-genesis = { version = "2.0.5", default-features = false }
+alloy-json-rpc = { version = "2.0.5", default-features = false }
+alloy-network = { version = "2.0.5", default-features = false }
+alloy-network-primitives = { version = "2.0.5", default-features = false }
+alloy-node-bindings = { version = "2.0.5", default-features = false }
+alloy-provider = { version = "2.0.5", features = [
   "reqwest",
   "debug-api",
 ], default-features = false }
-alloy-pubsub = { version = "2.0.4", default-features = false }
-alloy-rpc-client = { version = "2.0.4", default-features = false }
-alloy-rpc-types = { version = "2.0.4", features = [
+alloy-pubsub = { version = "2.0.5", default-features = false }
+alloy-rpc-client = { version = "2.0.5", default-features = false }
+alloy-rpc-types = { version = "2.0.5", features = [
   "eth",
 ], default-features = false }
-alloy-rpc-types-admin = { version = "2.0.4", default-features = false }
-alloy-rpc-types-anvil = { version = "2.0.4", default-features = false }
-alloy-rpc-types-beacon = { version = "2.0.4", default-features = false }
-alloy-rpc-types-debug = { version = "2.0.4", default-features = false }
-alloy-rpc-types-engine = { version = "2.0.4", default-features = false }
-alloy-rpc-types-eth = { version = "2.0.4", default-features = false }
-alloy-rpc-types-mev = { version = "2.0.4", default-features = false }
-alloy-rpc-types-trace = { version = "2.0.4", default-features = false }
-alloy-rpc-types-txpool = { version = "2.0.4", default-features = false }
-alloy-serde = { version = "2.0.4", default-features = false }
-alloy-signer = { version = "2.0.4", default-features = false }
-alloy-signer-local = { version = "2.0.4", default-features = false }
-alloy-transport = { version = "2.0.4" }
-alloy-transport-http = { version = "2.0.4", features = [
+alloy-rpc-types-admin = { version = "2.0.5", default-features = false }
+alloy-rpc-types-anvil = { version = "2.0.5", default-features = false }
+alloy-rpc-types-beacon = { version = "2.0.5", default-features = false }
+alloy-rpc-types-debug = { version = "2.0.5", default-features = false }
+alloy-rpc-types-engine = { version = "2.0.5", default-features = false }
+alloy-rpc-types-eth = { version = "2.0.5", default-features = false }
+alloy-rpc-types-mev = { version = "2.0.5", default-features = false }
+alloy-rpc-types-trace = { version = "2.0.5", default-features = false }
+alloy-rpc-types-txpool = { version = "2.0.5", default-features = false }
+alloy-serde = { version = "2.0.5", default-features = false }
+alloy-signer = { version = "2.0.5", default-features = false }
+alloy-signer-local = { version = "2.0.5", default-features = false }
+alloy-transport = { version = "2.0.5" }
+alloy-transport-http = { version = "2.0.5", features = [
   "reqwest-rustls-tls",
 ], default-features = false }
-alloy-transport-ipc = { version = "2.0.4", default-features = false }
-alloy-transport-ws = { version = "2.0.4", default-features = false }
+alloy-transport-ipc = { version = "2.0.5", default-features = false }
+alloy-transport-ws = { version = "2.0.5", default-features = false }
 
 # ==================== OP-ALLOY (from crates.io) ====================
 op-alloy = { version = "2.0.0", path = "op-alloy/crates/op-alloy", default-features = false }
