@@ -11502,7 +11502,7 @@ dependencies = [
 
 [[package]]
 name = "reth-optimism-firehose"
-version = "2.2.4"
+version = "2.3.0"
 dependencies = [
  "alloy-consensus 2.0.5",
  "alloy-eips 2.0.5",

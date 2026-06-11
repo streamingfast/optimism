@@ -1,9 +1,9 @@
 [package]
 name = "reth-optimism-firehose"
-# Tracks the public op-reth release line (currently v2.2.4); deliberately diverges from the
+# Tracks the public op-reth release line (currently v2.3.0); deliberately diverges from the
 # internal versioning sibling op-reth crates carry (those have not been updated to align with
 # the public release tags).
-version = "2.2.4"
+version = "2.3.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

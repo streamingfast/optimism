@@ -6,6 +6,30 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 
 ## Unreleased
 
+### Changed
+
+- Merged upstream `op-reth/v2.3.0` into the Firehose branch (previously based on
+  `op-reth/v2.2.4`). This is a genuine merge — `op-reth/v2.3.0` is now a parent in history,
+  so future `op-reth/v2.3.x` updates merge cleanly instead of re-conflicting the whole delta.
+- Bumped the SF reth fork pin in `rust/Cargo.toml` from branch `firehose/2.x` to tag
+  `v2.3.0-alpha.81c0261-fh-1`, built on upstream reth commit
+  `81c026181e96ef33a823f3ef4d2a28940e9fa4fe` — the exact rev `op-reth/v2.3.0` pins. The tag
+  also exposes `TreeState::state_trie_overlays()` publicly so `OpFirehoseEngineValidator`
+  (which lives outside `reth-engine-tree`) follows the same `OverlayBuilder` construction
+  path as upstream `BasicEngineValidator`.
+- Bumped the `reth-optimism-firehose` crate version from `2.2.4` to `2.3.0` to track the
+  public op-reth release line.
+- Adapted `OpFirehoseEngineValidator` in `engine_validator.rs` to the op-reth v2.3.0 API:
+  - `on_inserted_executed_block` now takes `BuiltPayloadExecutedBlock<N>` (was `ExecutedBlock<N>`)
+  - `DeferredTrieData::pending` drops `anchor_hash` and `ancestors` args
+  - `validate_payload` / `validate_block` now wrap return in `ValidationOutput::new(...)`
+  - `validate_block_post_execution` gains a 4th `Option` arg
+  - `LazyOverlay` / `get_parent_lazy_overlay` removed; replaced by
+    `overlay_builder_for_parent` using `state.tree_state().state_trie_overlays()`
+- Fixed `BlockHashNotFound` regression: parent blocks not yet persisted to the database
+  now resolve correctly via the `StateTrieOverlayManager` carried in `EngineApiTreeState`,
+  exactly mirroring upstream `BasicEngineValidator` behavior.
+
 ### Added
 
 - Switched workspace `reth-*` git dependencies in `rust/Cargo.toml` from
@@ -50,11 +74,10 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 
 ### Notes
 
-- The SF reth fork's `firehose/2.x` branch tracks upstream reth `v2.2.0`
-  (`88505c7fcbfdebfd3b56d88c86b62e950043c6c4`). A `v2.x.y-fh-N` tag will replace the
-  branch pin once cut.
-- The `reth-optimism-firehose` crate version (`2.2.4`) tracks the public op-reth release
-  line (op-reth currently tracks `v2.2.4`) rather than the internal `1.11.3` versions
+- The SF reth fork is pinned via tag `v2.3.0-alpha.81c0261-fh-1`, rebased on upstream reth
+  commit `81c026181e96ef33a823f3ef4d2a28940e9fa4fe` (the same commit `op-reth/v2.3.0` uses).
+- The `reth-optimism-firehose` crate version (`2.3.0`) tracks the public op-reth release
+  line (op-reth currently tracks `v2.3.0`) rather than the internal `1.11.3` versions
   carried by sibling `reth-optimism-*` crates.
 - Live engine-API tracing is delivered by the cloned `OpFirehoseEngineValidator` in this
   crate (NOT via the SF reth ExEx runner). The clone is necessary because the upstream
