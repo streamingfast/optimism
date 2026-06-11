@@ -1,0 +1,128 @@
+# StreamingFast Docker image build, push and (on tag) release.
+#
+# Maintained by StreamingFast and intentionally kept separate from upstream CI
+# so that upstream merges stay clean. Triggers only on `*-fh*` tags and manual
+# dispatch — never on pull requests or branch pushes — so it cannot collide with
+# upstream workflows and only maintainers (who push tags) can run it.
+#
+# Single architecture (linux/amd64): the op-reth `maxperf` full-node build is too
+# heavy to reliably build on GitHub-hosted arm64 runners, so we do not produce a
+# multi-arch manifest. Re-introduce a matrix + manifest-merge job here if arm64
+# becomes worthwhile.
+name: Build, push and release (if tag)
+
+on:
+  push:
+    tags:
+      - "*-fh*"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: extract-version
+        run: |
+          version="edge"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            version=${GITHUB_REF#refs/tags/}
+          fi
+          echo "VERSION=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate docker tags/labels from github build context
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # `type=sha` produces a stable `<short-sha>` tag that the `release` job
+          # below uses as a deterministic image reference to `docker cp` the
+          # binary out of. We build a single architecture and only on tags or
+          # manual dispatch, so there is no concurrent branch build to race with
+          # and no per-arch suffix tag is required.
+          tags: |
+            type=ref,event=tag,prefix=
+            type=sha,prefix=
+            type=edge
+          flavor: |
+            latest=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'beta') && !contains(github.ref, 'rc') }}
+
+      - name: Build and push Docker image (linux/amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: rust
+          file: ./rust/op-reth/Dockerfile.sf
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          build-args: |
+            VERSION=${{ steps.extract-version.outputs.VERSION }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-22.04
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Docker login
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image
+        id: image
+        run: |
+          echo "ID=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract assets
+        run: |
+          # The --platform is not strictly needed for a single-arch image, but it
+          # silences the buildx warning.
+          docker cp $(docker create --platform=linux/amd64 ${{ steps.image.outputs.ID }}):/usr/local/bin/op-reth ./op-reth_linux_amd64
+
+      - name: Extract Changelog
+        id: changelog
+        run: |
+          curl -L https://github.com/streamingfast/sfreleaser/releases/download/v0.12.1/sfreleaser_linux_x86_64.tar.gz | tar -xz
+          chmod +x sfreleaser
+
+          ./sfreleaser changelog extract-section \
+            github://token:${{ github.token }}@${{ github.repository }}/$GITHUB_SHA/CHANGELOG.sf.md \
+            --github-output="changelog:$GITHUB_OUTPUT"
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.changelog.outputs.changelog }}
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          files: |
+            ./op-reth_linux_amd64
