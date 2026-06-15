@@ -271,7 +271,13 @@ where
         attributes: Self::NextBlockEnvCtx,
         post_exec_mode: PostExecMode,
     ) -> Result<
-        impl BlockBuilder<Primitives = Self::Primitives, Executor: PostExecExecutorExt> + 'a,
+        impl BlockBuilder<
+            Primitives = Self::Primitives,
+            Executor: PostExecExecutorExt
+                          + BlockExecutor<
+                Evm: alloy_evm::Evm<DB: core::ops::DerefMut<Target = State<DB>>>,
+            >,
+        > + 'a,
         Self::Error,
     > {
         self.inner.post_exec_builder_for_next_block(db, parent, attributes, post_exec_mode)

@@ -515,7 +515,17 @@ where
         // event and does NOT leave the tracer in "block state", so wrapping the executor would
         // panic in `on_system_call_start`. Let the guard drop (no-op for genesis) and fall through
         // to the non-Firehose execution path.
-        let (mut fh_tracer, input): (Option<FirehoseBlockTracer>, _) = if is_tracer_initialized() {
+        // `convert_to_block` is `FnOnce`. In the traced branch we consume it here to obtain the
+        // sealed block (which the background conversion task already produced) and then hand a
+        // trivial resolver downstream, since `input` is now `BlockOrPayload::Block`. In the
+        // non-traced branch we leave it untouched and box it through so the lazy/background
+        // conversion still overlaps execution and resolves at the single call site below. Boxing
+        // unifies the two closure types; it is invoked at most once (line ~611), so `FnOnce` holds.
+        let (mut fh_tracer, input, convert_to_block): (
+            Option<FirehoseBlockTracer>,
+            _,
+            Box<dyn FnOnce(BlockOrPayload<T>) -> Result<SealedBlock<N::Block>, NewPayloadError>>,
+        ) = if is_tracer_initialized() {
             let sealed = match convert_to_block(input) {
                 Ok(sealed) => sealed,
                 Err(e) => return Err(e.into()),
@@ -528,31 +538,24 @@ where
                 is_genesis,
             );
             let fh_tracer = (!is_genesis).then_some(tracer);
-            // Rebuild the lazy `convert_to_block` closure as a no-op now that we have the block.
             let input = BlockOrPayload::Block(sealed);
-            (fh_tracer, input)
-        } else {
-            firehose_tracer::firehose_debug!(
-                "validator: firehose tracer NOT initialized — non-traced execution path",
-            );
-            (None, input)
-        };
-
-        // After the `input` has been (possibly) rebuilt as `BlockOrPayload::Block`, the
-        // background conversion task in `convert_to_block` is wasted but harmless: when we hit
-        // the `Either::Left(handle)` branch in `convert_to_block` we always come through with
-        // the original `input` variant — which we have now rewritten. Re-shadow `convert_to_block`
-        // to the trivial direct conversion to avoid mis-routing.
-        let convert_to_block =
-            move |input: BlockOrPayload<T>| -> Result<SealedBlock<N::Block>, NewPayloadError> {
-                match input {
+            (
+                fh_tracer,
+                input,
+                Box::new(|input: BlockOrPayload<T>| match input {
                     BlockOrPayload::Block(block) => Ok(block),
                     BlockOrPayload::Payload(_) => {
                         unreachable!("convert_to_block already resolved input to Block")
                     }
-                }
-            };
-        let _ = (&convert_to_block, is_payload);
+                }),
+            )
+        } else {
+            firehose_tracer::firehose_debug!(
+                "validator: firehose tracer NOT initialized — non-traced execution path",
+            );
+            (None, input, Box::new(convert_to_block))
+        };
+        let _ = is_payload;
 
         // Execute the block and handle any execution errors.
         // The receipt root task is spawned before execution and receives receipts incrementally

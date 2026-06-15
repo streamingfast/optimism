@@ -8,6 +8,18 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 
 ### Changed
 
+- Merged upstream `op-reth/v2.3.1` into the Firehose branch. The only substantive upstream
+  change is the reth pin bump (`81c0261` → `7680d6d`, a chain-state lock fix one commit
+  ahead) plus the removal of `OpEvmConfig::with_sdm_enabled` (SDM is now wired via
+  `sdm_post_exec_opt_in`). Correspondingly:
+  - Bumped the SF reth fork pin in `rust/Cargo.toml` from tag `v2.3.0-alpha.81c0261-fh-1`
+    to `v2.3.0-alpha.7680d6d-fh`, rebased on upstream reth
+    `7680d6d8a931c0af4f4eed26e971596970238b54` — the exact rev `op-reth/v2.3.1` pins.
+  - `OpExecutorBuilder::build_evm` no longer calls `.with_sdm_enabled(...)` (field removed
+    upstream); it now wraps the plain `OpEvmConfig::new(...)` in `OpFirehoseEvmConfig`.
+  - `OpFirehoseEvmConfig::post_exec_builder_for_next_block` widened its return bound to
+    match the trait's new `Executor: BlockExecutor<Evm: Evm<DB: DerefMut<Target = State<DB>>>>`
+    requirement; the `it/builder.rs` test drops the removed `sdm_enabled` field.
 - Merged upstream `op-reth/v2.3.0` into the Firehose branch (previously based on
   `op-reth/v2.2.4`). This is a genuine merge — `op-reth/v2.3.0` is now a parent in history,
   so future `op-reth/v2.3.x` updates merge cleanly instead of re-conflicting the whole delta.
