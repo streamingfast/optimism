@@ -62,8 +62,11 @@ RUN cargo chef cook --profile $BUILD_PROFILE --features "$FEATURES" --recipe-pat
 COPY . .
 RUN cargo auditable build --profile $BUILD_PROFILE --features "$FEATURES" --bin op-reth --manifest-path /app/op-reth/bin/Cargo.toml
 
+# Copy the built binary to a fixed, non-colliding path. NOTE: `/app/op-reth` is
+# the op-reth crate *source directory* in this stage (build context is `rust/`),
+# so the binary must NOT be named `/app/op-reth` or it lands inside that dir.
 RUN ls -la /app/target/$BUILD_PROFILE/op-reth
-RUN cp /app/target/$BUILD_PROFILE/op-reth /app/op-reth
+RUN cp /app/target/$BUILD_PROFILE/op-reth /app/op-reth-bin
 
 # Runtime image bundles the Firehose Ethereum stack (`fireeth`, at /app/fireeth)
 # plus the freshly built `op-reth`. The base is Ubuntu-based and already ships
@@ -75,7 +78,7 @@ LABEL org.opencontainers.image.version="${VERSION}"
 
 # Keep op-reth at the stable /usr/local/bin path that sf-release.yml `docker cp`s
 # out as a release asset, and symlink it into /app next to the bundled `fireeth`.
-COPY --from=builder /app/op-reth /usr/local/bin/op-reth
+COPY --from=builder /app/op-reth-bin /usr/local/bin/op-reth
 RUN chmod +x /usr/local/bin/op-reth && ln -sf /usr/local/bin/op-reth /app/op-reth
 COPY op-reth/LICENSE-* /app/
 
