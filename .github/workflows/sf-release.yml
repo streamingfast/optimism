@@ -18,10 +18,6 @@ on:
   push:
     branches:
       - "firehose/*"
-      # Explicit entry for the Dockerfile.sf fireeth-bundle work branch (also
-      # covered by the firehose/* glob; kept explicit so the image build is
-      # guaranteed to trigger for it).
-      - "firehose/docker-fireeth-bundle"
     tags:
       - "*-fh*"
   pull_request:
