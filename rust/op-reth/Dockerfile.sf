@@ -6,12 +6,22 @@
 # stable path (`/usr/local/bin/op-reth`) that the `sf-release.yml` workflow can
 # `docker cp` out of the image to attach as a GitHub release asset.
 #
+# The final stage is based on the `firehose-ethereum` image (mirrors
+# streamingfast/base's Dockerfile.sf), so the published image bundles both the
+# `fireeth` binary and `op-reth`. `fireeth` is the image entrypoint and drives
+# `op-reth` as its reader node. The bundled `fireeth` version is selected by the
+# `FIREHOSE_ETHEREUM` build arg (default `latest`).
+#
 # Keep this in sync with `op-reth/DockerfileOp` to avoid drift: when the upstream
 # Dockerfile changes (base image, build profile, build command), mirror the
 # relevant change here.
 #
 # Build context is the `rust/` workspace directory (same as the upstream
 # `op-reth` docker-bake target), so crate paths are rooted at `/app/op-reth`.
+
+# Bundled `fireeth` version = the `firehose-ethereum` runtime base image tag.
+# Declared before the first FROM so it is usable in the runtime stage's FROM.
+ARG FIREHOSE_ETHEREUM="latest"
 
 FROM lukemathwalker/cargo-chef:latest-rust-1.94 AS chef
 WORKDIR /app
@@ -52,20 +62,27 @@ RUN cargo chef cook --profile $BUILD_PROFILE --features "$FEATURES" --recipe-pat
 COPY . .
 RUN cargo auditable build --profile $BUILD_PROFILE --features "$FEATURES" --bin op-reth --manifest-path /app/op-reth/bin/Cargo.toml
 
+# Copy the built binary to a fixed, non-colliding path. NOTE: `/app/op-reth` is
+# the op-reth crate *source directory* in this stage (build context is `rust/`),
+# so the binary must NOT be named `/app/op-reth` or it lands inside that dir.
 RUN ls -la /app/target/$BUILD_PROFILE/op-reth
-RUN cp /app/target/$BUILD_PROFILE/op-reth /app/op-reth
+RUN cp /app/target/$BUILD_PROFILE/op-reth /app/op-reth-bin
 
-FROM chainguard/wolfi-base:latest AS runtime
+# Runtime image bundles the Firehose Ethereum stack (`fireeth`, at /app/fireeth)
+# plus the freshly built `op-reth`. The base is Ubuntu-based and already ships
+# ca-certificates / libstdc++ / openssl, so no extra packages are installed here.
+FROM ghcr.io/streamingfast/firehose-ethereum:${FIREHOSE_ETHEREUM}
 
 ARG VERSION="dev"
 LABEL org.opencontainers.image.version="${VERSION}"
 
-RUN apk add --no-cache ca-certificates openssl libstdc++ strace
-
-WORKDIR /app
-COPY --from=builder /app/op-reth /usr/local/bin/
-RUN chmod +x /usr/local/bin/op-reth
-COPY op-reth/LICENSE-* ./
+# Keep op-reth at the stable /usr/local/bin path that sf-release.yml `docker cp`s
+# out as a release asset, and symlink it into /app next to the bundled `fireeth`.
+COPY --from=builder /app/op-reth-bin /usr/local/bin/op-reth
+RUN chmod +x /usr/local/bin/op-reth && ln -sf /usr/local/bin/op-reth /app/op-reth
+COPY op-reth/LICENSE-* /app/
 
 EXPOSE 30303 30303/udp 9001 8545 8546 7545 8551
-ENTRYPOINT ["/usr/local/bin/op-reth"]
+
+# No ENTRYPOINT: inherit the firehose-ethereum image's entrypoint (`fireeth`),
+# which launches `op-reth` as its reader node.
