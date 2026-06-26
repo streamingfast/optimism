@@ -20,7 +20,7 @@
 
 use alloy_consensus::{BlockHeader, Transaction, transaction::TxHashRef};
 use alloy_evm::block::{BlockExecutionResult, BlockExecutor};
-use alloy_op_evm::OpEvmFactory;
+use alloy_op_evm::{OpEvmFactory, PreRefundGasUsed};
 use alloy_primitives::Sealable;
 use reth_errors::BlockExecutionError;
 use reth_evm::{
@@ -276,6 +276,7 @@ where
             Executor: PostExecExecutorExt
                           + BlockExecutor<
                 Evm: alloy_evm::Evm<DB: core::ops::DerefMut<Target = State<DB>>>,
+                Result: PreRefundGasUsed,
             >,
         > + 'a,
         Self::Error,

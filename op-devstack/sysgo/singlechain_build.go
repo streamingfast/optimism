@@ -164,7 +164,10 @@ func startL2ELForKey(t devtest.T, l2Net *L2Network, jwtPath string, jwtSecret [3
 }
 
 // startL2CLForKey starts an L2 CL node for the given key, respecting DEVSTACK_L2CL_KIND.
-// This is the single env-aware dispatch point for L2 CL selection.
+// This is the env-aware dispatch point for preset runtimes that don't build explicit node
+// specs. Runtimes constructed from explicit MixedSingleChainNodeSpec.CLKind values (e.g.
+// NewMixedSingleChainRuntime) don't route through here; they resolve the env up front via
+// ResolveMixedL2CLKind instead.
 func startL2CLForKey(
 	t devtest.T,
 	keys devkeys.Keys,
@@ -181,7 +184,7 @@ func startL2CLForKey(
 ) L2CLNode {
 	switch devstackL2CLKind() {
 	case MixedL2CLKona:
-		return startMixedKonaNode(t, keys, l1Net, l2Net, l1EL, l1CL, l2EL, clKey, elKey, isSequencer, nil)
+		return startMixedKonaNode(t, keys, l1Net, l2Net, l1EL, l1CL, l2EL, clKey, elKey, isSequencer, nil, nil)
 	default: // op-node
 		return startL2CLNode(t, keys, l1Net, l2Net, l1EL, l1CL, l2EL, jwtSecret, l2CLNodeStartConfig{
 			Key:            clKey,
@@ -289,6 +292,9 @@ type l2CLNodeStartConfig struct {
 	L2CLOptions    []L2CLOption
 	// SyncMode overrides the sequencer and verifier sync modes; defaults to CLSync if unset.
 	SyncMode nodeSync.Mode
+	// SequencerStopped starts the sequencer in the stopped state (it must be
+	// activated later via the StartSequencer RPC). Only meaningful when IsSequencer.
+	SequencerStopped bool
 }
 
 func startL2CLNode(
@@ -397,6 +403,7 @@ func startL2CLNode(
 		},
 		Driver: driver.Config{
 			SequencerEnabled:    cfg.IsSequencer,
+			SequencerStopped:    startCfg.SequencerStopped,
 			SequencerConfDepth:  2,
 			SequencerMaxSafeLag: cfg.SequencerMaxSafeLag,
 		},

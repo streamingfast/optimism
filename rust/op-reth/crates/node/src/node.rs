@@ -256,13 +256,18 @@ impl OpNode {
             .pool(
                 OpPoolBuilder::default()
                     .with_enable_tx_conditional(self.args.enable_tx_conditional)
-                    .with_interop(self.args.interop_http.clone(), self.args.interop_safety_level),
+                    .with_interop(
+                        self.args.interop_http.clone(),
+                        self.args.interop_min_responses,
+                        self.args.interop_safety_level,
+                    ),
             )
             .payload(BasicPayloadServiceBuilder::new(
                 OpPayloadBuilder::new(compute_pending_block)
                     .with_da_config(self.da_config.clone())
                     .with_gas_limit_config(self.gas_limit_config.clone())
-                    .with_sdm_post_exec_opt_in(self.sdm_post_exec_opt_in.clone()),
+                    .with_sdm_post_exec_opt_in(self.sdm_post_exec_opt_in.clone())
+                    .with_max_uncompressed_block_size(self.args.max_uncompressed_block_size),
             ))
             .network(OpNetworkBuilder::new(disable_txpool_gossip, !discovery_v4))
             .consensus(OpConsensusBuilder::default())
@@ -1078,9 +1083,12 @@ pub struct OpPoolBuilder<T = crate::txpool::OpPooledTransaction> {
     pub pool_config_overrides: PoolBuilderConfigOverrides,
     /// Enable transaction conditionals.
     pub enable_tx_conditional: bool,
-    /// Interop filter URL for txpool-level interop validation. When None, interop transaction
-    /// validation in the txpool is disabled.
-    pub interop_http: Option<String>,
+    /// Interop filter endpoints for txpool-level interop validation. When empty, interop
+    /// transaction validation in the txpool is disabled.
+    pub interop_endpoints: Vec<String>,
+    /// Minimum number of definitive verdicts required to decide an interop check. When None,
+    /// defaults to the number of endpoints (unanimity).
+    pub interop_min_responses: Option<usize>,
     /// Safety level for interop filter validation.
     pub interop_safety_level: SafetyLevel,
     /// Marker for the pooled transaction type.
@@ -1092,7 +1100,8 @@ impl<T> Default for OpPoolBuilder<T> {
         Self {
             pool_config_overrides: Default::default(),
             enable_tx_conditional: false,
-            interop_http: None,
+            interop_endpoints: Vec::new(),
+            interop_min_responses: None,
             interop_safety_level: SafetyLevel::CrossUnsafe,
             _pd: Default::default(),
         }
@@ -1104,7 +1113,8 @@ impl<T> Clone for OpPoolBuilder<T> {
         Self {
             pool_config_overrides: self.pool_config_overrides.clone(),
             enable_tx_conditional: self.enable_tx_conditional,
-            interop_http: self.interop_http.clone(),
+            interop_endpoints: self.interop_endpoints.clone(),
+            interop_min_responses: self.interop_min_responses,
             interop_safety_level: self.interop_safety_level,
             _pd: core::marker::PhantomData,
         }
@@ -1127,13 +1137,17 @@ impl<T> OpPoolBuilder<T> {
         self
     }
 
-    /// Sets the interop filter URL. Pass None to disable interop transaction validation.
+    /// Sets the interop filter endpoints and quorum. Pass an empty vec to disable interop
+    /// transaction validation. `interop_min_responses` defaults to the number of endpoints
+    /// (unanimity) when None.
     pub fn with_interop(
         mut self,
-        interop_client: Option<String>,
+        interop_endpoints: Vec<String>,
+        interop_min_responses: Option<usize>,
         interop_safety_level: SafetyLevel,
     ) -> Self {
-        self.interop_http = interop_client;
+        self.interop_endpoints = interop_endpoints;
+        self.interop_min_responses = interop_min_responses;
         self.interop_safety_level = interop_safety_level;
         self
     }
@@ -1155,20 +1169,30 @@ where
         let Self { pool_config_overrides, .. } = self;
 
         // Interop filter used for txpool validation.
-        let interop_client = if let Some(url) = self.interop_http.clone() {
-            Some(
-                InteropFilterClient::builder(url, ctx.chain_spec().chain_id())
-                    .minimum_safety(self.interop_safety_level)
-                    .build()
-                    .await,
-            )
-        } else {
+        let interop_client = if self.interop_endpoints.is_empty() {
             if ctx.chain_spec().is_interop_active_at_timestamp(ctx.head().timestamp) {
                 info!(target: "reth::cli",
                     "No interop filter URL configured (--rollup.interop-http), interop transaction validation disabled."
                 );
             }
             None
+        } else {
+            let endpoint_count = self.interop_endpoints.len();
+            let effective_min_responses = self.interop_min_responses.unwrap_or(endpoint_count);
+            info!(target: "reth::cli",
+                endpoints = endpoint_count,
+                min_responses = effective_min_responses,
+                "Interop filter configured: a tx is accepted only when {effective_min_responses} of {endpoint_count} endpoints return a definitive verdict and all agree it is valid"
+            );
+            let mut builder = InteropFilterClient::builder(
+                self.interop_endpoints.clone(),
+                ctx.chain_spec().chain_id(),
+            )
+            .minimum_safety(self.interop_safety_level);
+            if let Some(min) = self.interop_min_responses {
+                builder = builder.min_responses(min);
+            }
+            Some(builder.build().await)
         };
 
         let blob_store = reth_node_builder::components::create_blob_store(ctx)?;
@@ -1286,6 +1310,11 @@ pub struct OpPayloadBuilder<Txs = ()> {
     pub gas_limit_config: OpGasLimitConfig,
     /// Operator opt-in flag for SDM `PostExec` production. Shared with the admin RPC.
     pub sdm_post_exec_opt_in: SdmPostExecOptIn,
+    /// Maximum cumulative uncompressed (EIP-2718 encoded) block size in bytes.
+    ///
+    /// `None` disables the limit. See
+    /// [`OpBuilderConfig::max_uncompressed_block_size`](reth_optimism_payload_builder::config::OpBuilderConfig::max_uncompressed_block_size).
+    pub max_uncompressed_block_size: Option<u64>,
 }
 
 impl OpPayloadBuilder {
@@ -1298,12 +1327,22 @@ impl OpPayloadBuilder {
             da_config: OpDAConfig::default(),
             gas_limit_config: OpGasLimitConfig::default(),
             sdm_post_exec_opt_in: SdmPostExecOptIn::default(),
+            max_uncompressed_block_size: None,
         }
     }
 
     /// Configure the data availability configuration for the OP payload builder.
     pub fn with_da_config(mut self, da_config: OpDAConfig) -> Self {
         self.da_config = da_config;
+        self
+    }
+
+    /// Configure the maximum uncompressed (EIP-2718 encoded) block size for the OP payload builder.
+    pub const fn with_max_uncompressed_block_size(
+        mut self,
+        max_uncompressed_block_size: Option<u64>,
+    ) -> Self {
+        self.max_uncompressed_block_size = max_uncompressed_block_size;
         self
     }
 
@@ -1326,7 +1365,12 @@ impl<Txs> OpPayloadBuilder<Txs> {
     /// payload.
     pub fn with_transactions<T>(self, best_transactions: T) -> OpPayloadBuilder<T> {
         let Self {
-            compute_pending_block, da_config, gas_limit_config, sdm_post_exec_opt_in, ..
+            compute_pending_block,
+            da_config,
+            gas_limit_config,
+            sdm_post_exec_opt_in,
+            max_uncompressed_block_size,
+            ..
         } = self;
         OpPayloadBuilder {
             compute_pending_block,
@@ -1334,6 +1378,7 @@ impl<Txs> OpPayloadBuilder<Txs> {
             da_config,
             gas_limit_config,
             sdm_post_exec_opt_in,
+            max_uncompressed_block_size,
         }
     }
 }
@@ -1384,6 +1429,7 @@ where
                 da_config: self.da_config.clone(),
                 gas_limit_config: self.gas_limit_config.clone(),
                 sdm_post_exec_opt_in: self.sdm_post_exec_opt_in.clone(),
+                max_uncompressed_block_size: self.max_uncompressed_block_size,
             },
         )
         .with_transactions(self.best_transactions.clone())
