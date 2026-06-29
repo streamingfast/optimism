@@ -9,6 +9,17 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## v2.3.3-fh-1
+
+### Fixed
+
+- LIB (last irreversible / finalized block) was never advertised on the live
+  engine-API path: the cloned `OpFirehoseEngineValidator` started the block
+  tracer with `finalized = None`, so emitted blocks carried no finalized ref and
+  downstream LIB never advanced. It now reads the finalized head from the node
+  provider (`finalized_block_num_hash()`) and passes it as the block's
+  `FinalizedBlockRef`, mirroring the reth fork's `runner.rs` ExEx path.
+
 ## v2.3.3-fh
 
 Bumps the SF op-reth fork to upstream `op-reth/v2.3.3` (the intervening

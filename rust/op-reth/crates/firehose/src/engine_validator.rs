@@ -55,10 +55,10 @@ use reth_primitives_traits::{
 };
 use reth_provider::{
     providers::{OverlayBuilder, OverlayStateProviderFactory},
-    BlockExecutionOutput, BlockNumReader, BlockReader, ChangeSetReader, DatabaseProviderFactory,
-    DatabaseProviderROFactory, HashedPostStateProvider, ProviderError, PruneCheckpointReader,
-    StageCheckpointReader, StateProvider, StateProviderBox, StateProviderFactory, StateReader,
-    StorageChangeSetReader, StorageSettingsCache,
+    BlockExecutionOutput, BlockIdReader, BlockNumReader, BlockReader, ChangeSetReader,
+    DatabaseProviderFactory, DatabaseProviderROFactory, HashedPostStateProvider, ProviderError,
+    PruneCheckpointReader, StageCheckpointReader, StateProvider, StateProviderBox,
+    StateProviderFactory, StateReader, StorageChangeSetReader, StorageSettingsCache,
 };
 use reth_revm::{
     database::StateProviderDatabase,
@@ -152,6 +152,7 @@ where
         > + BlockReader<Header = N::BlockHeader>
         + ChangeSetReader
         + BlockNumReader
+        + BlockIdReader
         + StateProviderFactory
         + StateReader
         + HashedPostStateProvider
@@ -533,7 +534,18 @@ where
                 Ok(sealed) => sealed,
                 Err(e) => return Err(e.into()),
             };
-            let tracer = FirehoseBlockTracer::start::<N>(&sealed, None);
+            // Advertise the current finalized head as the block's LIB (last
+            // irreversible block). Mirrors the reth fork's `runner.rs`, which passes
+            // `to_finalized_ref(ctx.provider().finalized_block_num_hash())`; here we read
+            // it from the validator's provider. `to_finalized_ref` is crate-private in
+            // `reth-firehose`, so the conversion is inlined.
+            let finalized = self.provider.finalized_block_num_hash().ok().flatten().map(|num_hash| {
+                firehose_tracer::types::FinalizedBlockRef {
+                    number: num_hash.number,
+                    hash: Some(num_hash.hash),
+                }
+            });
+            let tracer = FirehoseBlockTracer::start::<N>(&sealed, finalized);
             let is_genesis = tracer.is_genesis();
             firehose_tracer::firehose_debug!(
                 "validator: firehose tracer initialized (block={}, is_genesis={})",

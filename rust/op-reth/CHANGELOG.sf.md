@@ -6,6 +6,14 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 
 ## Unreleased
 
+### Fixed
+
+- LIB (finalized block) was never advanced on the live engine-API path: the cloned
+  `OpFirehoseEngineValidator` started the block tracer with `finalized = None`. It now reads the
+  finalized head via `self.provider.finalized_block_num_hash()` (requiring a `BlockIdReader` bound
+  on the provider) and passes it as the block's `FinalizedBlockRef`, mirroring the reth fork's
+  `runner.rs`.
+
 ### Changed
 
 - Merged upstream `op-reth/v2.3.3` into the Firehose branch. No reth/revm/alloy version bump
