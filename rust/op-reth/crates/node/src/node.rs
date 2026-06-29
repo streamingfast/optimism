@@ -53,7 +53,9 @@ use reth_optimism_rpc::{
     witness::{DebugExecutionWitnessApiServer, OpDebugPostExecApiServer, OpDebugWitnessApi},
 };
 use reth_optimism_storage::OpStorage;
-use reth_optimism_txpool::{OpPool, OpPooledTx, interop_filter::InteropFilterClient};
+use reth_optimism_txpool::{
+    OpPool, OpPooledTx, interop::InteropFailsafe, interop_filter::InteropFilterClient,
+};
 use reth_primitives_traits::header::HeaderMut;
 use reth_provider::{CanonStateSubscriptions, providers::ProviderFactoryBuilder};
 use reth_rpc_api::{
@@ -208,6 +210,9 @@ pub struct OpNode {
     /// Local operator opt-in for SDM `PostExec` production. Shared (via Arc clones) between the
     /// payload builder and the `admin_setSdmPostExecOptIn` RPC handler.
     pub sdm_post_exec_opt_in: SdmPostExecOptIn,
+    /// Interop failsafe gate, shared between the txpool's interop filter client (writer) and the
+    /// payload builder (reader, to exclude interop txs while it is active).
+    pub interop_failsafe: InteropFailsafe,
 }
 
 /// A [`ComponentsBuilder`] with its generic arguments set to a stack of Optimism specific builders.
@@ -228,6 +233,7 @@ impl OpNode {
             da_config: OpDAConfig::default(),
             gas_limit_config: OpGasLimitConfig::default(),
             sdm_post_exec_opt_in: SdmPostExecOptIn::default(),
+            interop_failsafe: InteropFailsafe::default(),
         }
     }
 
@@ -260,13 +266,15 @@ impl OpNode {
                         self.args.interop_http.clone(),
                         self.args.interop_min_responses,
                         self.args.interop_safety_level,
-                    ),
+                    )
+                    .with_interop_failsafe(self.interop_failsafe.clone()),
             )
             .payload(BasicPayloadServiceBuilder::new(
                 OpPayloadBuilder::new(compute_pending_block)
                     .with_da_config(self.da_config.clone())
                     .with_gas_limit_config(self.gas_limit_config.clone())
                     .with_sdm_post_exec_opt_in(self.sdm_post_exec_opt_in.clone())
+                    .with_interop_failsafe(self.interop_failsafe.clone())
                     .with_max_uncompressed_block_size(self.args.max_uncompressed_block_size),
             ))
             .network(OpNetworkBuilder::new(disable_txpool_gossip, !discovery_v4))
@@ -296,12 +304,12 @@ impl OpNode {
     /// [`ReadOnlyConfig`](reth_provider::providers::ReadOnlyConfig).
     ///
     /// ```no_run
-    /// use reth_optimism_chainspec::BASE_MAINNET;
+    /// use reth_optimism_chainspec::OP_MAINNET;
     /// use reth_optimism_node::OpNode;
     ///
     /// fn demo(runtime: reth_tasks::Runtime) {
     ///     let factory = OpNode::provider_factory_builder()
-    ///         .open_read_only(BASE_MAINNET.clone(), "datadir", runtime)
+    ///         .open_read_only(OP_MAINNET.clone(), "datadir", runtime)
     ///         .unwrap();
     /// }
     /// ```
@@ -316,7 +324,7 @@ impl OpNode {
     /// fn demo(runtime: reth_tasks::Runtime) {
     ///     let factory = OpNode::provider_factory_builder()
     ///         .open_read_only(
-    ///             OpChainSpecBuilder::base_mainnet().build().into(),
+    ///             OpChainSpecBuilder::optimism_mainnet().build().into(),
     ///             ReadOnlyConfig::from_datadir("datadir").no_watch(),
     ///             runtime,
     ///         )
@@ -1091,6 +1099,8 @@ pub struct OpPoolBuilder<T = crate::txpool::OpPooledTransaction> {
     pub interop_min_responses: Option<usize>,
     /// Safety level for interop filter validation.
     pub interop_safety_level: SafetyLevel,
+    /// Shared interop failsafe gate, passed to the interop filter client this builder constructs.
+    pub interop_failsafe: InteropFailsafe,
     /// Marker for the pooled transaction type.
     _pd: core::marker::PhantomData<T>,
 }
@@ -1103,6 +1113,7 @@ impl<T> Default for OpPoolBuilder<T> {
             interop_endpoints: Vec::new(),
             interop_min_responses: None,
             interop_safety_level: SafetyLevel::CrossUnsafe,
+            interop_failsafe: InteropFailsafe::default(),
             _pd: Default::default(),
         }
     }
@@ -1116,6 +1127,7 @@ impl<T> Clone for OpPoolBuilder<T> {
             interop_endpoints: self.interop_endpoints.clone(),
             interop_min_responses: self.interop_min_responses,
             interop_safety_level: self.interop_safety_level,
+            interop_failsafe: self.interop_failsafe.clone(),
             _pd: core::marker::PhantomData,
         }
     }
@@ -1149,6 +1161,12 @@ impl<T> OpPoolBuilder<T> {
         self.interop_endpoints = interop_endpoints;
         self.interop_min_responses = interop_min_responses;
         self.interop_safety_level = interop_safety_level;
+        self
+    }
+
+    /// Shares the interop failsafe gate, written by the interop filter client this builder builds.
+    pub fn with_interop_failsafe(mut self, interop_failsafe: InteropFailsafe) -> Self {
+        self.interop_failsafe = interop_failsafe;
         self
     }
 }
@@ -1188,7 +1206,8 @@ where
                 self.interop_endpoints.clone(),
                 ctx.chain_spec().chain_id(),
             )
-            .minimum_safety(self.interop_safety_level);
+            .minimum_safety(self.interop_safety_level)
+            .failsafe(self.interop_failsafe.clone());
             if let Some(min) = self.interop_min_responses {
                 builder = builder.min_responses(min);
             }
@@ -1310,6 +1329,8 @@ pub struct OpPayloadBuilder<Txs = ()> {
     pub gas_limit_config: OpGasLimitConfig,
     /// Operator opt-in flag for SDM `PostExec` production. Shared with the admin RPC.
     pub sdm_post_exec_opt_in: SdmPostExecOptIn,
+    /// Interop failsafe gate, read by the builder to exclude interop txs while it is active.
+    pub interop_failsafe: InteropFailsafe,
     /// Maximum cumulative uncompressed (EIP-2718 encoded) block size in bytes.
     ///
     /// `None` disables the limit. See
@@ -1327,6 +1348,7 @@ impl OpPayloadBuilder {
             da_config: OpDAConfig::default(),
             gas_limit_config: OpGasLimitConfig::default(),
             sdm_post_exec_opt_in: SdmPostExecOptIn::default(),
+            interop_failsafe: InteropFailsafe::default(),
             max_uncompressed_block_size: None,
         }
     }
@@ -1358,6 +1380,13 @@ impl OpPayloadBuilder {
         self.sdm_post_exec_opt_in = sdm_post_exec_opt_in;
         self
     }
+
+    /// Provide the shared interop failsafe gate read by the builder.
+    #[must_use]
+    pub fn with_interop_failsafe(mut self, interop_failsafe: InteropFailsafe) -> Self {
+        self.interop_failsafe = interop_failsafe;
+        self
+    }
 }
 
 impl<Txs> OpPayloadBuilder<Txs> {
@@ -1369,6 +1398,7 @@ impl<Txs> OpPayloadBuilder<Txs> {
             da_config,
             gas_limit_config,
             sdm_post_exec_opt_in,
+            interop_failsafe,
             max_uncompressed_block_size,
             ..
         } = self;
@@ -1378,6 +1408,7 @@ impl<Txs> OpPayloadBuilder<Txs> {
             da_config,
             gas_limit_config,
             sdm_post_exec_opt_in,
+            interop_failsafe,
             max_uncompressed_block_size,
         }
     }
@@ -1429,6 +1460,7 @@ where
                 da_config: self.da_config.clone(),
                 gas_limit_config: self.gas_limit_config.clone(),
                 sdm_post_exec_opt_in: self.sdm_post_exec_opt_in.clone(),
+                interop_failsafe: self.interop_failsafe.clone(),
                 max_uncompressed_block_size: self.max_uncompressed_block_size,
             },
         )

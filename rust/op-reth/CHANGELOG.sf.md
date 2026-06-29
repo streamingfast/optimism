@@ -8,6 +8,17 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 
 ### Changed
 
+- Merged upstream `op-reth/v2.3.3` into the Firehose branch. No reth/revm/alloy version bump
+  (reth pin stays `v2.3.0-fh`), so the Firehose tracing code is unchanged. Adaptations:
+  - Enabled the `reth-codec` feature on the firehose crate's `reth-optimism-primitives`
+    dependency. Upstream made `reth-codec` opt-in
+    (`feat(op-reth): make chainspec reth-codec opt-in`, #21483), which dropped the `Compact`
+    impls for `OpReceipt`/`OpTxEnvelope` from the default feature set; the firehose crate now
+    opts in explicitly, matching the payload/rpc/storage/post-exec-replay crates.
+  - New build prerequisite from upstream: the chainspec `build.rs` loads chain configs from the
+    `superchain-registry` git submodule (`load OP Mainnet/Sepolia from superchain-registry`,
+    #21397; root submodule coupling, #21474). Run
+    `just update-superchain-registry-submodule` before building.
 - Merged upstream `op-reth/v2.3.2-rc.2` into the Firehose branch. The substantive change is the
   reth pin bump from upstream rev `7680d6d` to the released tag `v2.3.0`. Correspondingly:
   - Bumped the SF reth fork pin in `rust/Cargo.toml` from tag `v2.3.0-alpha.7680d6d-fh` to

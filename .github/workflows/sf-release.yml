@@ -52,6 +52,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # The op-reth chainspec build.rs reads chain configs from the
+      # superchain-registry submodule (upstream #21397/#21474). Init only that
+      # submodule (not the heavy contracts-bedrock tree) so it can be passed to
+      # the Docker build as the `superchain-registry` named context below.
+      - name: Init superchain-registry submodule
+        run: git submodule update --init --depth 1 superchain-registry
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -104,6 +111,12 @@ jobs:
         with:
           context: rust
           file: ./rust/op-reth/Dockerfile.sf
+          # The chainspec build.rs needs the superchain-registry submodule, which
+          # lives at the repo root (outside the `rust` context). Expose it as a
+          # named build context the Dockerfile COPYs from (mirrors the
+          # docker-bake.hcl `superchain-registry` context used by upstream CI).
+          build-contexts: |
+            superchain-registry=superchain-registry
           platforms: linux/amd64
           push: ${{ env.IS_EXTERNAL_PR != 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
