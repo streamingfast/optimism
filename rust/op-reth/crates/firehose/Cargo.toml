@@ -49,7 +49,10 @@ firehose-tracer.workspace = true
 
 # op-reth internal crates
 reth-optimism-evm.workspace = true
-reth-optimism-primitives.workspace = true
+# `reth-codec` no longer implied (upstream #21483 made it opt-in); enable it so
+# `OpReceipt`/`OpTxEnvelope` keep their `Compact` impls, matching the other
+# op-reth crates that depend on primitives (payload, rpc, storage, ...).
+reth-optimism-primitives = { workspace = true, features = ["reth-codec"] }
 
 # alloy
 alloy-evm.workspace = true
