@@ -8,6 +8,25 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 
 ### Changed
 
+- Merged upstream `op-reth/v2.3.2-rc.2` into the Firehose branch. The substantive change is the
+  reth pin bump from upstream rev `7680d6d` to the released tag `v2.3.0`. Correspondingly:
+  - Bumped the SF reth fork pin in `rust/Cargo.toml` from tag `v2.3.0-alpha.7680d6d-fh` to
+    `v2.3.0-fh`, rebased on upstream reth `v2.3.0` (the exact tag `op-reth/v2.3.2-rc.2` pins).
+  - Adapted `OpFirehoseEngineValidator` in `engine_validator.rs` to the reth `v2.3.0` API:
+    - State-hook install moved from the removed `BlockExecutor::with_state_hook(...)` to
+      `executor.evm_mut().db_mut().set_state_hook(...)` (both the plain and Firehose-traced
+      execution paths).
+    - `PayloadProcessor::spawn` gained a 6th `parallel_bal_execution: bool` argument; Firehose
+      passes `false` (sequential tracing is incompatible with the parallel BAL path).
+    - `CachedStateProvider::new(..).with_cache_stats(..)` replaced by
+      `CachedStateProvider::new_with_mode(.., CacheFillMode::LookupOnly, Some(metrics), cache_stats)`
+      (the `with_cache_stats` builder was removed and metrics is now `Option`).
+    - `DeferredTrieData::pending(..)` now returns a `(DeferredTrieData, DeferredTrieDataProducer)`
+      tuple; the background task uses `producer.compute_and_publish()` (was `handle.wait_cloned()`).
+  - `OpFirehoseEvmConfig::post_exec_builder_for_next_block` return bound widened with
+    `Result: PreRefundGasUsed` to match the upstream `ConfigurePostExecEvm` trait.
+  - `alloy-op-evm` `lib.rs` import reconciled: keep Firehose's `InspectSystemCallEvm` alongside
+    upstream's new `DBErrorMarker`.
 - Merged upstream `op-reth/v2.3.1` into the Firehose branch. The only substantive upstream
   change is the reth pin bump (`81c0261` → `7680d6d`, a chain-state lock fix one commit
   ahead) plus the removal of `OpEvmConfig::with_sdm_enabled` (SDM is now wired via
