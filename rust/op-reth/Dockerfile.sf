@@ -60,6 +60,16 @@ ARG VERSION="dev"
 RUN cargo chef cook --profile $BUILD_PROFILE --features "$FEATURES" --recipe-path recipe.json --manifest-path /app/op-reth/bin/Cargo.toml || true
 
 COPY . .
+
+# The reth-optimism-chainspec build.rs generates res/superchain-configs.tar from
+# the superchain-registry submodule, which lives at the repo root — outside this
+# "rust" build context. Provide the `superchain/` subdir it reads (configs +
+# extra/genesis + extra/dictionary) via the `superchain-registry` named build
+# context; the git-free build.rs resolves it at /superchain-registry. Mirrors
+# upstream op-reth/DockerfileOp (which gets the context from docker-bake.hcl;
+# sf-release.yml supplies it via build-contexts).
+COPY --from=superchain-registry superchain /superchain-registry/superchain
+
 RUN cargo auditable build --profile $BUILD_PROFILE --features "$FEATURES" --bin op-reth --manifest-path /app/op-reth/bin/Cargo.toml
 
 # Copy the built binary to a fixed, non-colliding path. NOTE: `/app/op-reth` is
