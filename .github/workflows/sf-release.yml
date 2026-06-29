@@ -122,9 +122,18 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: false
+          # Cache the cargo-chef dependency layer across runs (ephemeral runners
+          # otherwise cold-rebuild all deps every time, ~13m). Keyed per profile by
+          # buildx, so PR (fast-build) and tag (maxperf) caches stay separate.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           build-args: |
             VERSION=${{ steps.extract-version.outputs.VERSION }}
             FIREHOSE_ETHEREUM=${{ inputs.firehose_ethereum || 'latest' }}
+            # Full LTO `maxperf` is only worth its ~19m link tail for shippable
+            # builds (tags); PRs use `fast-build` (no LTO) to validate the build
+            # faster. Mirrors upstream build-images.yaml.
+            BUILD_PROFILE=${{ github.event_name == 'pull_request' && 'fast-build' || 'maxperf' }}
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
