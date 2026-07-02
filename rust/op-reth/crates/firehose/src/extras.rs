@@ -112,6 +112,15 @@ where
         // before these. Skip zero-amount entries to avoid phantom balance changes (Isthmus
         // gate, pre-London basefee, etc.).
         let (db, inspector, _) = evm.components_mut();
+        // `old` must be the vault's *post-execution* balance, not the pre-tx balance from
+        // `db.basic` (the DB still reflects pre-tx state until `commit_transaction`). They
+        // differ on a FeeVault-withdrawal tx: the vault is drained mid-execution, so a pre-tx
+        // read overstates both `old` and `new` by the withdrawn amount. Resolve it from the
+        // inspector's tx journal snapshot — the same source the coinbase reward uses — which
+        // reflects the intra-tx drain; it falls back to the pre-tx DB balance for the common
+        // case where the vault is untouched during execution.
+        let mut get_pre =
+            |addr: Address| db.basic(addr).ok().flatten().map(|i| i.balance).unwrap_or(U256::ZERO);
         for (vault, amount) in [
             (BASE_FEE_VAULT, base_fee_amount),
             (L1_FEE_VAULT, l1_cost),
@@ -120,7 +129,7 @@ where
             if amount.is_zero() {
                 continue;
             }
-            let old = db.basic(vault).ok().flatten().map(|i| i.balance).unwrap_or(U256::ZERO);
+            let old = inspector.post_tx_balance_erased(vault, &mut get_pre);
             let new = old.saturating_add(amount);
             inspector
                 .tracer_mut()
