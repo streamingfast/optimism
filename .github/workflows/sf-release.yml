@@ -34,6 +34,14 @@ env:
 
 jobs:
   build:
+    # A same-repo `firehose/*` branch already builds via the `push` trigger, and
+    # that run's checks show on the PR (same commit SHA). Skip the duplicate
+    # same-repo PR build. Fork PRs (push can't cover them) and non-`firehose/*`
+    # PR branches still build here.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name != github.repository ||
+      !startsWith(github.head_ref, 'firehose/')
     runs-on: ubuntu-24.04
 
     permissions:
