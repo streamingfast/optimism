@@ -29,7 +29,7 @@ use reth_evm::{
 };
 use reth_firehose::{
     ChainHooks, FirehoseBlockExecutor, FirehoseBlockTracer, FirehoseWrappedExecutor,
-    mapper::SignatureFields,
+    is_tracer_initialized, mapper::SignatureFields,
 };
 use reth_optimism_evm::{ConfigurePostExecEvm, OpTx, PostExecExecutorExt, PostExecMode};
 use reth_optimism_primitives::OpPrimitives;
@@ -275,5 +275,49 @@ where
         Self::Error,
     > {
         self.inner.post_exec_builder_for_next_block(db, parent, attributes, post_exec_mode)
+    }
+
+    /// Re-executes a locally-built (derivation `no_tx_pool`) block through the tracing executor
+    /// so it emits a `FIRE BLOCK`.
+    ///
+    /// Such blocks are produced via `getPayload` and inserted as canonical without passing
+    /// through the traced `newPayload` engine path, so this is their only tracing opportunity.
+    /// The re-execution is deterministic and reuses the exact [`OpChainHooks`] wrapping (same
+    /// `OpPostTxExtras` / `OpPreTxAdjust`) as the pipeline and engine paths, so the emitted block
+    /// is byte-identical to what those paths would produce. `state` must be a fresh [`State`]
+    /// over the block's parent.
+    fn firehose_trace_built_block<DB: Database>(
+        &self,
+        state: &mut State<DB>,
+        block: &RecoveredBlock<<Self::Primitives as NodePrimitives>::Block>,
+    ) -> Result<(), BlockExecutionError> {
+        if !is_tracer_initialized() {
+            return Ok(());
+        }
+
+        let finalized = Some(firehose_tracer::types::FinalizedBlockRef {
+            number: block.header().number(),
+            hash: Some(block.hash()),
+        });
+        let mut tracer =
+            FirehoseBlockTracer::start::<Self::Primitives>(block.sealed_block(), finalized);
+
+        // The builder always extends an existing parent, so block 1 never reaches here; guard
+        // anyway since the wrapped executor would panic on the genesis marker.
+        if tracer.is_genesis() {
+            tracer.mark_verified();
+            return Ok(());
+        }
+
+        match OpChainHooks.execute_one_traced(&self.inner, state, block, &mut tracer) {
+            Ok(_) => {
+                tracer.mark_verified();
+                Ok(())
+            }
+            Err(err) => {
+                tracer.mark_failed(&err);
+                Err(err)
+            }
+        }
     }
 }

@@ -11531,6 +11531,7 @@ dependencies = [
  "reth-chainspec",
  "reth-evm",
  "reth-execution-types",
+ "reth-firehose",
  "reth-metrics",
  "reth-optimism-chainspec",
  "reth-optimism-evm",

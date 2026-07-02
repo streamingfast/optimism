@@ -12,12 +12,14 @@ use op_revm::OpSpecId;
 use reth_chainspec::EthChainSpec;
 use reth_evm::{
     ConfigureEvm, Database,
-    execute::{BasicBlockBuilder, BlockBuilder},
+    execute::{BasicBlockBuilder, BlockBuilder, BlockExecutionError},
     precompiles::PrecompilesMap,
 };
 use reth_optimism_forks::OpHardforks;
 use reth_optimism_primitives::DepositReceipt;
-use reth_primitives_traits::{NodePrimitives, SealedBlock, SealedHeader, SignedTransaction};
+use reth_primitives_traits::{
+    NodePrimitives, RecoveredBlock, SealedBlock, SealedHeader, SignedTransaction,
+};
 use revm::{context::BlockEnv, database::State};
 
 use crate::{OpBlockExecutorFactory, OpEvmConfig, OpEvmFactory, OpTx, PostExecMode};
@@ -65,6 +67,24 @@ pub trait ConfigurePostExecEvm: ConfigureEvm {
         > + 'a,
         Self::Error,
     >;
+
+    /// Firehose hook: re-execute an already-built block through the tracing executor so it
+    /// emits a `FIRE BLOCK`.
+    ///
+    /// The OP payload builder constructs derivation (`no_tx_pool`) blocks via `getPayload`,
+    /// which never pass through the traced `newPayload` engine path, so those blocks are
+    /// otherwise invisible to Firehose. This hook lets a Firehose-aware EVM config re-run such
+    /// a block against a fresh parent `state` and emit it. The default is a no-op; only the
+    /// Firehose wrapper overrides it.
+    ///
+    /// `state` must be a fresh [`State`] over the block's parent.
+    fn firehose_trace_built_block<DB: Database>(
+        &self,
+        _state: &mut State<DB>,
+        _block: &RecoveredBlock<<Self::Primitives as NodePrimitives>::Block>,
+    ) -> Result<(), BlockExecutionError> {
+        Ok(())
+    }
 }
 
 impl<ChainSpec, N, R> ConfigurePostExecEvm for OpEvmConfig<ChainSpec, N, R>
