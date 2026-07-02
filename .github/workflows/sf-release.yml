@@ -18,6 +18,8 @@ name: Build, push and release (if tag)
 
 on:
   push:
+    branches:
+      - "firehose/*"
     tags:
       - "*-fh*"
   pull_request:
