@@ -38,7 +38,7 @@ use reth_optimism_txpool::{
     interop::{MaybeInteropTransaction, is_interop_tx, is_valid_interop},
 };
 use reth_payload_builder_primitives::PayloadBuilderError;
-use reth_payload_primitives::{BuildNextEnv, BuiltPayloadExecutedBlock};
+use reth_payload_primitives::{BuildNextEnv, BuiltPayload, BuiltPayloadExecutedBlock};
 use reth_payload_util::{BestPayloadTransactions, NoopPayloadTransactions, PayloadTransactions};
 use reth_primitives_traits::{
     HeaderTy, NodePrimitives, SealedHeader, SealedHeaderFor, SignedTransaction, TxTy,
@@ -270,13 +270,35 @@ where
         let state_provider = self.client.state_by_block_hash(ctx.parent().hash())?;
         let state = StateProviderDatabase::new(&state_provider);
 
-        if ctx.attributes().no_tx_pool() {
-            builder.build(state, &state_provider, ctx)
+        let outcome = if ctx.attributes().no_tx_pool() {
+            let outcome = builder.build(state, &state_provider, ctx)?;
+
+            // Firehose: `no_tx_pool` (derivation) blocks are constructed here and inserted as
+            // canonical without going through the traced `newPayload` engine path, so they would
+            // otherwise never emit a `FIRE BLOCK`. Re-execute the frozen block through the tracing
+            // executor. Re-execution is confined to these built blocks (older, L1-derived range),
+            // never the latency-critical live gossip path. No-op unless the tracer is installed.
+            if reth_firehose::is_tracer_initialized() {
+                if let BuildOutcomeKind::Freeze(payload) = &outcome {
+                    if let Some(executed) = payload.executed_block() {
+                        let mut trace_state = State::builder()
+                            .with_database(StateProviderDatabase::new(&state_provider))
+                            .with_bundle_update()
+                            .build();
+                        self.evm_config
+                            .firehose_trace_built_block(&mut trace_state, &executed.recovered_block)
+                            .map_err(|err| PayloadBuilderError::Internal(err.into()))?;
+                    }
+                }
+            }
+
+            outcome
         } else {
             // sequencer mode we can reuse cachedreads from previous runs
-            builder.build(cached_reads.as_db_mut(state), &state_provider, ctx)
-        }
-        .map(|out| out.with_cached_reads(cached_reads))
+            builder.build(cached_reads.as_db_mut(state), &state_provider, ctx)?
+        };
+
+        Ok(outcome.with_cached_reads(cached_reads))
     }
 
     /// Computes the witness for the payload.
