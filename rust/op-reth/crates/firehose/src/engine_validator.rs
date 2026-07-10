@@ -44,7 +44,7 @@ use reth_evm::{
     block::BlockExecutor, execute::ExecutableTxFor, ConfigureEvm, EvmEnvFor, ExecutionCtxFor,
     OnStateHook, SpecFor,
 };
-use reth_execution_cache::{CacheStats, SavedCache};
+use reth_execution_cache::{CacheFillMode, CacheStats, SavedCache};
 use reth_payload_primitives::{
     BuiltPayload, BuiltPayloadExecutedBlock, InvalidPayloadAttributesError, NewPayloadError,
     PayloadTypes,
@@ -486,11 +486,17 @@ where
 
         // Use cached state provider before executing, used in execution after prewarming threads
         // complete
-        if let Some((caches, cache_metrics)) = handle.caches().zip(handle.cache_metrics()) {
-            state_provider = Box::new(
-                CachedStateProvider::new(state_provider, caches, cache_metrics)
-                    .with_cache_stats(cache_stats.clone()),
-            );
+        if let Some(caches) = handle.caches() {
+            // `CacheFillMode::LookupOnly` matches upstream's serial execution path: revm's own
+            // `State` caching makes fill-on-miss redundant here, and the execution post-state is
+            // dumped into the execution cache wholesale after the block anyway.
+            state_provider = Box::new(CachedStateProvider::new_with_mode(
+                state_provider,
+                caches,
+                CacheFillMode::LookupOnly,
+                handle.cache_metrics(),
+                cache_stats.clone(),
+            ));
         };
 
         let state_provider_stats = if slow_block_enabled || self.config.state_provider_metrics() {
@@ -969,8 +975,9 @@ where
 
         let transaction_count = input.transaction_count();
         let executed_tx_index = Arc::clone(handle.executed_tx_index());
-        let executor = executor.with_state_hook(
-            handle.state_hook().map(|hook| Box::new(hook) as Box<dyn OnStateHook>),
+        // State hooks moved from the executor to the revm State (alloy-evm #366); set on the db.
+        executor.evm_mut().db_mut().set_state_hook(
+            handle.state_hook().map(|hook| Box::new(hook) as Box<dyn OnStateHook + 'static>),
         );
 
         let execution_start = Instant::now();
@@ -1110,8 +1117,9 @@ where
 
         let transaction_count = input.transaction_count();
         let executed_tx_index = Arc::clone(handle.executed_tx_index());
-        let executor = executor.with_state_hook(
-            handle.state_hook().map(|hook| Box::new(hook) as Box<dyn OnStateHook>),
+        // State hooks moved from the executor to the revm State (alloy-evm #366); set on the db.
+        executor.evm_mut().db_mut().set_state_hook(
+            handle.state_hook().map(|hook| Box::new(hook) as Box<dyn OnStateHook + 'static>),
         );
 
         let execution_start = Instant::now();
@@ -1544,6 +1552,9 @@ where
                     provider_builder,
                     overlay_factory,
                     &self.config,
+                    // BAL parallel execution is not implemented in this OP clone; both the serial
+                    // and the Firehose-traced paths install the normal execution state hook.
+                    false,
                 );
 
                 // record prewarming initialization duration
@@ -1643,17 +1654,16 @@ where
 
     /// Spawns a background task to compute and sort trie data for the executed block.
     ///
-    /// This function creates a [`DeferredTrieData`] handle with fallback inputs and spawns a
-    /// blocking task that calls `wait_cloned()` to:
+    /// This function creates a [`DeferredTrieData`] handle and spawns a blocking task that:
     /// 1. Sort the block's hashed state and trie updates
-    /// 2. Cache the result so subsequent calls return immediately
+    /// 2. Publishes the result so subsequent calls return immediately
     ///
-    /// If the background task hasn't completed when `trie_data()` is called, `wait_cloned()`
-    /// computes from the stored inputs, eliminating deadlock risk and duplicate computation.
+    /// If the background task hasn't completed when `trie_data()` is called, callers wait for the
+    /// publishing task instead of computing synchronously.
     ///
     /// The validation hot path can return immediately after state root verification,
-    /// while consumers (DB writes, overlay providers, proofs) get trie data either
-    /// from the completed task or via fallback computation.
+    /// while consumers (DB writes, overlay providers, proofs) get trie data from the completed
+    /// task.
     fn spawn_deferred_trie_task(
         &self,
         block: RecoveredBlock<N::Block>,
@@ -1662,15 +1672,15 @@ where
         trie_output: Arc<TrieUpdates>,
         changeset_provider: impl TrieCursorFactory + Send + 'static,
     ) -> ExecutedBlock<N> {
-        // Create deferred handle with fallback inputs in case the background task hasn't completed.
+        // Create deferred handle and task that owns the unsorted inputs.
         // Resolve the lazy handle into Arc<HashedPostState>. By this point the hashed state has
         // already been computed and used for state root verification, so .get() returns instantly.
         let hashed_state = match hashed_state.try_into_inner() {
             Ok(state) => Arc::new(state),
             Err(handle) => Arc::new(handle.get().clone()),
         };
-        let deferred_trie_data = DeferredTrieData::pending(hashed_state, trie_output);
-        let deferred_handle_task = deferred_trie_data.clone();
+        let (deferred_trie_data, deferred_trie_task) =
+            DeferredTrieData::pending(hashed_state, trie_output);
         let block_validation_metrics = self.metrics.block_validation.clone();
 
         // Capture block info and cache handle for changeset computation
@@ -1682,8 +1692,8 @@ where
         // The guard ensures the pending entry is cancelled if the task panics.
         let pending_changeset_guard = self.changeset_cache.register_pending(block_hash);
 
-        // Spawn background task to compute trie data. Calling `wait_cloned` will compute from
-        // the stored inputs and cache the result, so subsequent calls return immediately.
+        // Spawn background task to compute trie data. The task publishes the sorted result before
+        // computing changesets, so trie data waiters do not block on changeset computation.
         let compute_trie_input_task = move || {
             let _span = debug_span!(
                 target: "engine::tree::payload_validator",
@@ -1694,7 +1704,7 @@ where
 
             let result = panic::catch_unwind(AssertUnwindSafe(|| {
                 let compute_start = Instant::now();
-                let computed = deferred_handle_task.wait_cloned();
+                let computed = deferred_trie_task.compute_and_publish();
                 block_validation_metrics
                     .deferred_trie_compute_duration
                     .record(compute_start.elapsed().as_secs_f64());
@@ -1731,7 +1741,7 @@ where
                             target: "engine::tree::changeset",
                             ?block_number,
                             ?e,
-                            "Failed to compute changesets in deferred trie task"
+                            "Failed to compute changesets for deferred trie producer"
                         );
                     }
                 }
@@ -1740,7 +1750,7 @@ where
             if result.is_err() {
                 error!(
                     target: "engine::tree::payload_validator",
-                    "Deferred trie task panicked; fallback computation will be used when trie data is accessed"
+                    "Deferred trie task panicked"
                 );
             }
         };
