@@ -8,6 +8,15 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 
 ### Changed
 
+- Merged upstream `op-reth/v2.4.0` into the Firehose branch. No reth/revm/alloy version bump
+  (reth pin stays `v2.3.0-fh-2`): upstream's `[workspace.dependencies]` reth/revm/alloy pins are
+  byte-for-byte identical between `op-reth/v2.3.3` and `op-reth/v2.4.0` (still `paradigmxyz/reth`
+  tag `v2.3.0`), so `streamingfast/reth v2.3.0-fh-2` already covers it and no new reth tag was
+  required. The merge was conflict-free — upstream's op-reth changes (`node/src/node.rs`,
+  `payload/src/builder.rs` + tests, `txpool/src/lib.rs`, new `node/tests/it/custom_pool/*`) do not
+  overlap the Firehose hooks, which sit in disjoint functions (`OpFirehoseEngineValidatorBuilder`/
+  `OpFirehoseEvmConfig` wiring in `node.rs`, `firehose_trace_built_block` in the `no_tx_pool`
+  branch of `build_payload`). The Firehose crate `crates/firehose/` is untouched upstream.
 - Merged upstream `op-reth/v2.3.3` into the Firehose branch. No reth/revm/alloy version bump
   (reth pin stays `v2.3.0-fh`), so the Firehose tracing code is unchanged. Adaptations:
   - Enabled the `reth-codec` feature on the firehose crate's `reth-optimism-primitives`
