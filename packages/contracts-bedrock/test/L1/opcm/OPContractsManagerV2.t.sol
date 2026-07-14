@@ -33,6 +33,7 @@ import { IOPContractsManagerMigrator } from "interfaces/L1/opcm/IOPContractsMana
 import { IOptimismPortal2 } from "interfaces/L1/IOptimismPortal2.sol";
 import { IDisputeGame } from "interfaces/dispute/IDisputeGame.sol";
 import { IDisputeGameFactory } from "interfaces/dispute/IDisputeGameFactory.sol";
+import { IDelayedWETH } from "interfaces/dispute/IDelayedWETH.sol";
 import { IAnchorStateRegistry } from "interfaces/dispute/IAnchorStateRegistry.sol";
 import { IZKVerifier } from "interfaces/dispute/zk/IZKVerifier.sol";
 import { IETHLockbox } from "interfaces/L1/IETHLockbox.sol";
@@ -265,10 +266,10 @@ contract OPContractsManagerV2_Upgrade_TestInit is OPContractsManagerV2_TestInit 
         v2UpgradeInput.systemConfig = systemConfig;
         v2UpgradeInput.disputeGameConfigs.push(
             IOPContractsManagerUtils.DisputeGameConfig({
-                enabled: true,
-                initBond: disputeGameFactory.initBonds(GameTypes.CANNON),
+                enabled: false,
+                initBond: 0,
                 gameType: GameTypes.CANNON,
-                gameArgs: abi.encode(IOPContractsManagerUtils.FaultDisputeGameConfig({ absolutePrestate: cannonPrestate }))
+                gameArgs: bytes("")
             })
         );
         v2UpgradeInput.disputeGameConfigs.push(
@@ -328,7 +329,10 @@ contract OPContractsManagerV2_Upgrade_TestInit is OPContractsManagerV2_TestInit 
             })
         );
 
-        // Allow the DelayedWETH proxy to be (re)deployed during upgrades if it is missing.
+        _pushPermittedProxyDeploymentInstruction();
+    }
+
+    function _pushPermittedProxyDeploymentInstruction() internal {
         v2UpgradeInput.extraInstructions.push(
             IOPContractsManagerUtils.ExtraInstruction({ key: "PermittedProxyDeployment", data: bytes("DelayedWETH") })
         );
@@ -348,7 +352,6 @@ contract OPContractsManagerV2_Upgrade_TestInit is OPContractsManagerV2_TestInit 
     )
         internal
     {
-        // Grab some values before we upgrade, to be checked later
         address initialChallenger = DisputeGames.permissionedGameChallenger(disputeGameFactory);
         address initialProposer = DisputeGames.permissionedGameProposer(disputeGameFactory);
 
@@ -486,6 +489,23 @@ contract OPContractsManagerV2_Upgrade_TestInit is OPContractsManagerV2_TestInit 
         public
     {
         _runOpcmV2UpgradeAndChecks(opcmV2, _delegateCaller, _revertBytes, _expectedValidatorErrors);
+    }
+
+    /// @notice Reloads fork-live contract handles after rerunning ForkL1Live, which may overwrite artifacts.
+    function _reloadForkLiveContracts() internal {
+        systemConfig = ISystemConfig(artifacts.mustGetAddress("SystemConfigProxy"));
+        optimismPortal2 = IOptimismPortal2(payable(artifacts.mustGetAddress("OptimismPortalProxy")));
+        ethLockbox = IETHLockbox(artifacts.getAddress("ETHLockboxProxy"));
+        superchainConfig = ISuperchainConfig(artifacts.mustGetAddress("SuperchainConfigProxy"));
+        disputeGameFactory = IDisputeGameFactory(artifacts.mustGetAddress("DisputeGameFactoryProxy"));
+        anchorStateRegistry = IAnchorStateRegistry(artifacts.mustGetAddress("AnchorStateRegistryProxy"));
+        delayedWeth = IDelayedWETH(artifacts.mustGetAddress("DelayedWETHProxy"));
+        opcmV2 = IOPContractsManagerV2(artifacts.mustGetAddress("OPContractsManagerV2"));
+        proxyAdmin = IProxyAdmin(artifacts.mustGetAddress("ProxyAdmin"));
+        proxyAdminOwner = proxyAdmin.owner();
+        superchainProxyAdmin = IProxyAdmin(EIP1967Helper.getAdmin(address(superchainConfig)));
+        superchainProxyAdminOwner = superchainProxyAdmin.owner();
+        setSystemConfig(systemConfig);
     }
 
     /// @notice Extracts the absolute prestate embedded in a dispute game config.
@@ -725,34 +745,34 @@ contract OPContractsManagerV2_Upgrade_Test is OPContractsManagerV2_Upgrade_TestI
 
     /// @notice Tests that repeatedly upgrading can enable a previously disabled game type.
     function test_upgrade_enableGameType_succeeds() public {
-        uint256 originalBond = disputeGameFactory.initBonds(GameTypes.CANNON);
+        uint256 originalBond = disputeGameFactory.initBonds(GameTypes.CANNON_KONA);
 
-        // First, disable Cannon and clear its bond so the factory entry is removed.
-        // If the chain's current respectedGameType is CANNON, we must override it to
-        // PERMISSIONED_CANNON since we can't disable the respected game type.
-        v2UpgradeInput.disputeGameConfigs[0].enabled = false;
-        v2UpgradeInput.disputeGameConfigs[0].initBond = 0;
+        // First, disable CannonKona and clear its bond so the factory entry is removed.
+        // CANNON_KONA is the respected game type, so we must override it to PERMISSIONED_CANNON
+        // before disabling it (the respected game type cannot itself be disabled).
+        v2UpgradeInput.disputeGameConfigs[2].enabled = false;
+        v2UpgradeInput.disputeGameConfigs[2].initBond = 0;
         v2UpgradeInput.extraInstructions.push(
             IOPContractsManagerUtils.ExtraInstruction({
                 key: "overrides.cfg.startingRespectedGameType",
                 data: abi.encode(GameTypes.PERMISSIONED_CANNON)
             })
         );
-        runCurrentUpgradeV2(chainPAO, hex"", "PLDG-10");
-        assertEq(address(disputeGameFactory.gameImpls(GameTypes.CANNON)), address(0), "game impl not cleared");
+        runCurrentUpgradeV2(chainPAO, hex"", "CKDG-NOSHAPE,CKDG-10");
+        assertEq(address(disputeGameFactory.gameImpls(GameTypes.CANNON_KONA)), address(0), "game impl not cleared");
 
-        // Re-enable Cannon and restore its bond so that it is re-installed.
-        // Remove the startingRespectedGameType override since CANNON is enabled again.
-        v2UpgradeInput.disputeGameConfigs[0].enabled = true;
-        v2UpgradeInput.disputeGameConfigs[0].initBond = originalBond;
+        // Re-enable CannonKona and restore its bond so that it is re-installed.
+        // Remove the startingRespectedGameType override since CANNON_KONA is enabled again.
+        v2UpgradeInput.disputeGameConfigs[2].enabled = true;
+        v2UpgradeInput.disputeGameConfigs[2].initBond = originalBond;
         v2UpgradeInput.extraInstructions.pop();
         runCurrentUpgradeV2(chainPAO);
         assertEq(
-            address(disputeGameFactory.gameImpls(GameTypes.CANNON)),
+            address(disputeGameFactory.gameImpls(GameTypes.CANNON_KONA)),
             opcmV2.implementations().faultDisputeGameImpl,
             "game impl not restored"
         );
-        assertEq(disputeGameFactory.initBonds(GameTypes.CANNON), originalBond, "init bond not restored");
+        assertEq(disputeGameFactory.initBonds(GameTypes.CANNON_KONA), originalBond, "init bond not restored");
     }
 
     /// @notice Tests that a stale SUPER_CANNON registration left over from a prior OPCM is
@@ -795,39 +815,41 @@ contract OPContractsManagerV2_Upgrade_Test is OPContractsManagerV2_Upgrade_TestI
 
     /// @notice Tests that disabling a game type removes it from the factory.
     function test_upgrade_disableGameType_succeeds() public {
-        // Establish the baseline where Cannon is enabled.
+        // Establish the baseline where CannonKona is enabled and Cannon is disabled.
         runCurrentUpgradeV2(chainPAO);
+        assertEq(address(disputeGameFactory.gameImpls(GameTypes.CANNON)), address(0), "cannon impl not cleared");
+        assertEq(disputeGameFactory.initBonds(GameTypes.CANNON), 0, "cannon init bond not cleared");
         assertEq(
-            address(disputeGameFactory.gameImpls(GameTypes.CANNON)),
+            address(disputeGameFactory.gameImpls(GameTypes.CANNON_KONA)),
             opcmV2.implementations().faultDisputeGameImpl,
             "initial game impl mismatch"
         );
 
-        // Disable Cannon and zero its bond, then ensure it is removed.
-        // If the chain's current respectedGameType is CANNON, we must override it to
-        // PERMISSIONED_CANNON since we can't disable the respected game type.
-        v2UpgradeInput.disputeGameConfigs[0].enabled = false;
-        v2UpgradeInput.disputeGameConfigs[0].initBond = 0;
+        // Disable CannonKona and zero its bond, then ensure it is removed.
+        // CANNON_KONA is the respected game type, so we must override it to PERMISSIONED_CANNON
+        // before disabling it (the respected game type cannot itself be disabled).
+        v2UpgradeInput.disputeGameConfigs[2].enabled = false;
+        v2UpgradeInput.disputeGameConfigs[2].initBond = 0;
         v2UpgradeInput.extraInstructions.push(
             IOPContractsManagerUtils.ExtraInstruction({
                 key: "overrides.cfg.startingRespectedGameType",
                 data: abi.encode(GameTypes.PERMISSIONED_CANNON)
             })
         );
-        runCurrentUpgradeV2(chainPAO, hex"", "PLDG-10");
-        assertEq(address(disputeGameFactory.gameImpls(GameTypes.CANNON)), address(0), "game impl not cleared");
-        assertEq(disputeGameFactory.initBonds(GameTypes.CANNON), 0, "init bond not cleared");
-        assertEq(disputeGameFactory.gameArgs(GameTypes.CANNON), bytes(""), "game args not cleared");
+        runCurrentUpgradeV2(chainPAO, hex"", "CKDG-NOSHAPE,CKDG-10");
+        assertEq(address(disputeGameFactory.gameImpls(GameTypes.CANNON_KONA)), address(0), "game impl not cleared");
+        assertEq(disputeGameFactory.initBonds(GameTypes.CANNON_KONA), 0, "init bond not cleared");
+        assertEq(disputeGameFactory.gameArgs(GameTypes.CANNON_KONA), bytes(""), "game args not cleared");
     }
 
-    /// @notice Tests that the upgrade flow can update the Cannon and Permissioned prestate.
+    /// @notice Tests that the upgrade flow can update the CannonKona and Permissioned prestates.
     function test_upgrade_updatePrestate_succeeds() public {
         // Run baseline upgrade and capture the current prestates.
         runCurrentUpgradeV2(chainPAO);
         assertEq(
-            _gameArgsAbsolutePrestate(GameTypes.CANNON),
-            Claim.unwrap(cannonPrestate),
-            "baseline cannon prestate mismatch"
+            _gameArgsAbsolutePrestate(GameTypes.CANNON_KONA),
+            Claim.unwrap(cannonKonaPrestate),
+            "baseline cannon kona prestate mismatch"
         );
         assertEq(
             _gameArgsAbsolutePrestate(GameTypes.PERMISSIONED_CANNON),
@@ -838,10 +860,9 @@ contract OPContractsManagerV2_Upgrade_Test is OPContractsManagerV2_Upgrade_TestI
         // Prepare new prestates.
         Claim newPrestate = Claim.wrap(bytes32(keccak256("new cannon prestate")));
         cannonPrestate = newPrestate;
+        cannonKonaPrestate = newPrestate;
 
         // Update the dispute game configs to point at the new prestates.
-        v2UpgradeInput.disputeGameConfigs[0].gameArgs =
-            abi.encode(IOPContractsManagerUtils.FaultDisputeGameConfig({ absolutePrestate: newPrestate }));
         v2UpgradeInput.disputeGameConfigs[1].gameArgs = abi.encode(
             IOPContractsManagerUtils.PermissionedDisputeGameConfig({
                 absolutePrestate: newPrestate,
@@ -849,10 +870,16 @@ contract OPContractsManagerV2_Upgrade_Test is OPContractsManagerV2_Upgrade_TestI
                 challenger: DisputeGames.permissionedGameChallenger(disputeGameFactory)
             })
         );
+        v2UpgradeInput.disputeGameConfigs[2].gameArgs =
+            abi.encode(IOPContractsManagerUtils.FaultDisputeGameConfig({ absolutePrestate: newPrestate }));
 
         // Run the upgrade again and ensure prestates updated.
         runCurrentUpgradeV2(chainPAO);
-        assertEq(_gameArgsAbsolutePrestate(GameTypes.CANNON), Claim.unwrap(newPrestate), "cannon prestate not updated");
+        assertEq(
+            _gameArgsAbsolutePrestate(GameTypes.CANNON_KONA),
+            Claim.unwrap(newPrestate),
+            "cannon kona prestate not updated"
+        );
         assertEq(
             _gameArgsAbsolutePrestate(GameTypes.PERMISSIONED_CANNON),
             Claim.unwrap(newPrestate),
@@ -895,7 +922,6 @@ contract OPContractsManagerV2_Upgrade_Test is OPContractsManagerV2_Upgrade_TestI
                 data: bytes("DelayedWETH")
             })
         );
-
         runCurrentUpgradeV2(chainPAO);
     }
 
@@ -975,6 +1001,11 @@ contract OPContractsManagerV2_Upgrade_Test is OPContractsManagerV2_Upgrade_TestI
         /// This is a hack because fork live has an outdated superchain registry reference that it pulls the addresses
         /// from
         IAnchorStateRegistry anchorStateRegistry = optimismPortal2.anchorStateRegistry();
+        vm.mockCall(
+            address(anchorStateRegistry),
+            abi.encodeCall(IAnchorStateRegistry.respectedGameType, ()),
+            abi.encode(GameTypes.CANNON_KONA)
+        );
         GameType before = anchorStateRegistry.respectedGameType();
         runCurrentUpgradeV2(chainPAO);
         assertEq(
@@ -1168,8 +1199,8 @@ contract OPContractsManagerV2_Upgrade_Test is OPContractsManagerV2_Upgrade_TestI
 
     /// @notice Tests that enabling a game type with a zero container implementation reverts.
     function test_upgrade_enabledGameWithZeroImpl_reverts() public {
-        // Zero out the Cannon implementation in the container
-        // Cannon is always enabled in the default v2UpgradeInput.
+        // Zero out the CannonKona implementation in the container.
+        // CannonKona is enabled in the default v2UpgradeInput.
         IOPContractsManagerContainer.Implementations memory impls = opcmV2.implementations();
         impls.faultDisputeGameImpl = address(0);
 
@@ -1183,7 +1214,7 @@ contract OPContractsManagerV2_Upgrade_Test is OPContractsManagerV2_Upgrade_TestI
         runCurrentUpgradeV2(
             chainPAO,
             abi.encodeWithSelector(
-                IOPContractsManagerV2.OPContractsManagerV2_ZeroGameImplementation.selector, GameTypes.CANNON
+                IOPContractsManagerV2.OPContractsManagerV2_ZeroGameImplementation.selector, GameTypes.CANNON_KONA
             )
         );
     }
@@ -1477,6 +1508,33 @@ contract OPContractsManagerV2_Upgrade_Test is OPContractsManagerV2_Upgrade_TestI
                 })
             );
         }
+    }
+
+    /// @notice Tests that future fork-live setup still works after the current upgrade has already been applied.
+    function test_forkLiveSetup_currentUpgradeAlreadyApplied_succeeds() public {
+        skipIfNotForkTest("FutureForkLiveSetup: only runs in forked tests");
+
+        if (isDevFeatureEnabled(DevFeatures.SUPER_ROOT_GAMES_MIGRATION)) {
+            uint32 originalRaw = optimismPortal2.respectedGameType().raw();
+            bool isPermissionless = originalRaw == GameTypes.CANNON.raw() || originalRaw == GameTypes.CANNON_KONA.raw()
+                || originalRaw == GameTypes.SUPER_CANNON_KONA.raw();
+            address currentProposer = DisputeGames.permissionedGameProposer(disputeGameFactory);
+            _setupSuperRootConfigs(isPermissionless, currentProposer);
+        }
+
+        // First apply the current upgrade. The fork state now represents a future live chain
+        // where this upgrade has already landed.
+        runCurrentUpgradeV2(chainPAO);
+
+        // Rerun the same setup path normal fork-live tests use. This must rediscover addresses
+        // from the already-upgraded state and reapply the current upgrade idempotently.
+        deploy.cfg().setUseUpgradedFork(true);
+        forkL1Live.run();
+        _reloadForkLiveContracts();
+
+        // Reapply through the upgrade test helper too, so StandardValidator runs after rereading
+        // fork-live artifacts from the already-upgraded state.
+        runCurrentUpgradeV2(chainPAO);
     }
 }
 
@@ -1821,10 +1879,9 @@ contract OPContractsManagerV2_Deploy_Test is OPContractsManagerV2_TestInit {
     /// @notice Tests that the deploy function succeeds and passes standard validation.
     function test_deploy_succeeds() public {
         // Run the deploy and standard validator checks.
-        // In standard mode, CANNON and CANNON_KONA are disabled → PLDG-10,CKDG-10.
-        // In super root mode, SUPER_CANNON_KONA is disabled → SCKDG-SHAPE,SCKDG-10.
+        // In standard mode, CANNON_KONA is disabled. In super root mode, SUPER_CANNON_KONA is disabled.
         bool superRoot = isDevFeatureEnabled(DevFeatures.SUPER_ROOT_GAMES_MIGRATION);
-        string memory expectedErrors = superRoot ? "SCKDG-SHAPE,SCKDG-10" : "CKDG-NOSHAPE,PLDG-10,CKDG-10";
+        string memory expectedErrors = superRoot ? "SCKDG-SHAPE,SCKDG-10" : "CKDG-NOSHAPE,CKDG-10";
         IOPContractsManagerV2.ChainContracts memory cts = runDeployV2(deployConfig, bytes(""), expectedErrors);
 
         // Verify key contracts are deployed.
@@ -1975,7 +2032,7 @@ contract OPContractsManagerV2_Deploy_Test is OPContractsManagerV2_TestInit {
         bool superRoot = isDevFeatureEnabled(DevFeatures.SUPER_ROOT_GAMES_MIGRATION);
         GameType permType = superRoot ? GameTypes.SUPER_PERMISSIONED : GameTypes.PERMISSIONED_CANNON;
         deployConfig.startingRespectedGameType = permType;
-        string memory expectedErrors = superRoot ? "SCKDG-SHAPE,SCKDG-10" : "CKDG-NOSHAPE,PLDG-10,CKDG-10";
+        string memory expectedErrors = superRoot ? "SCKDG-SHAPE,SCKDG-10" : "CKDG-NOSHAPE,CKDG-10";
         IOPContractsManagerV2.ChainContracts memory cts = runDeployV2(deployConfig, bytes(""), expectedErrors);
         assertEq(cts.anchorStateRegistry.respectedGameType().raw(), permType.raw(), "respected game type mismatch");
     }
@@ -2076,8 +2133,8 @@ contract OPContractsManagerV2_Migrate_Test is OPContractsManagerV2_TestInit {
     {
         // Set up dispute game configs first since they're needed for the struct literal.
         bool superRoot = isDevFeatureEnabled(DevFeatures.SUPER_ROOT_GAMES_MIGRATION);
-        address initialChallenger = _initialPermissionedGameChallenger(superRoot);
-        address initialProposer = _initialPermissionedGameProposer(superRoot);
+        address initialChallenger = _initialPermissionedGameChallenger();
+        address initialProposer = _initialPermissionedGameProposer();
         IOPContractsManagerUtils.DisputeGameConfig[] memory dgConfigs =
             new IOPContractsManagerUtils.DisputeGameConfig[](6);
         dgConfigs[0] = IOPContractsManagerUtils.DisputeGameConfig({
@@ -2165,16 +2222,12 @@ contract OPContractsManagerV2_Migrate_Test is OPContractsManagerV2_TestInit {
         cts_ = opcmV2.deploy(deployConfig);
     }
 
-    function _initialPermissionedGameChallenger(bool _superRoot) internal view returns (address challenger_) {
-        if (!_superRoot) return DisputeGames.permissionedGameChallenger(disputeGameFactory);
-
-        challenger_ = address(0);
+    function _initialPermissionedGameChallenger() internal view returns (address challenger_) {
+        challenger_ = DisputeGames.permissionedGameChallenger(disputeGameFactory);
     }
 
-    function _initialPermissionedGameProposer(bool _superRoot) internal view returns (address proposer_) {
-        if (!_superRoot) return DisputeGames.permissionedGameProposer(disputeGameFactory);
-
-        proposer_ = DisputeGames.superPermissionedGameProposer(disputeGameFactory);
+    function _initialPermissionedGameProposer() internal view returns (address proposer_) {
+        proposer_ = DisputeGames.permissionedGameProposer(disputeGameFactory);
     }
 
     /// @notice Helper function to create the default migration input.
