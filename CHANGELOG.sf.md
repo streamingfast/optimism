@@ -9,6 +9,10 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## v2.4.0-fh3.1
+
+Bumps the SF op-reth fork to upstream `op-reth/v2.4.0`.
+
 ## v2.3.3-fh
 
 Bumps the SF op-reth fork to upstream `op-reth/v2.3.3` (the intervening
