@@ -8,6 +8,13 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 
 ### Fixed
 
+- Bumped the SF reth fork pin in `rust/Cargo.toml` from `v2.3.0-fh-6` to `v2.3.0-fh-7`, which
+  includes the SELFDESTRUCT refund in an account's resolved post-transaction balance. revm credits
+  the beneficiary in place and records the move only inside its `AccountDestroyed` journal entry on
+  the truly-destroyed path (EIP-6780), so a coinbase, sender or fee vault that received a suicide
+  refund reported a `RewardTransactionFee` / `GasRefund` `old_balance` contradicting the
+  `SuicideRefund` event emitted moments earlier. No reth/revm/alloy version moves.
+
 - LIB (finalized block) was never advanced on the live engine-API path: the cloned
   `OpFirehoseEngineValidator` started the block tracer with `finalized = None`. It now reads the
   finalized head via `self.provider.finalized_block_num_hash()` (requiring a `BlockIdReader` bound
