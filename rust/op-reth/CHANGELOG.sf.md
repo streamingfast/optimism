@@ -6,6 +6,27 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 
 ## Unreleased
 
+### Fixed
+
+- Bumped the SF reth fork pin in `rust/Cargo.toml` from `v2.3.0-fh-2` to `v2.3.0-fh-7`, picking up
+  five Firehose fixes. No reth/revm/alloy version moves — the tags differ only in `crates/firehose`
+  (plus a small `payload_validator.rs` finality fix), so the `Cargo.lock` diff is purely the git
+  tag/rev of the `streamingfast/reth` source.
+  - fh-7: include the SELFDESTRUCT refund when resolving an account's post-transaction balance.
+    revm credits the beneficiary in place and records the move only inside its `AccountDestroyed`
+    journal entry on the truly-destroyed path (EIP-6780), so a coinbase, sender or fee vault that
+    received a suicide refund reported a `RewardTransactionFee` / `GasRefund` `old_balance`
+    contradicting the `SuicideRefund` event emitted moments earlier. The same resolver backs the
+    OP fee-vault credits in `OpPostTxExtras`.
+  - fh-6: emit the value-transfer balance changes when a transaction sends value to a precompile
+    and then fails; the reverted callee had its `BalanceTransfer` journal entry truncated before
+    the journal walk ran.
+  - fh-5: fix a call/receipt log-count mismatch panic when a native-precompile log is emitted at a
+    journal index freed by a reverted opcode `LOG`.
+  - fh-3: gas-bound cap on `step_keccak256`, preventing an OOM panic for operations that would
+    out-of-gas anyway.
+  - fh-4 is CI/packaging only (Docker build for the reth fork), no runtime effect here.
+
 ### Changed
 
 - Merged upstream `op-reth/v2.4.0` into the Firehose branch. No reth/revm/alloy version bump
