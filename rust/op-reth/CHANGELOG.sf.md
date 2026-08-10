@@ -4,7 +4,7 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 `paradigmxyz/reth` (via the SF `streamingfast/reth` fork) and on top of
 `ethereum-optimism/optimism`'s `op-reth` tree.
 
-## Unreleased
+## v2.4.0-fh3.1-1
 
 ### Fixed
 
