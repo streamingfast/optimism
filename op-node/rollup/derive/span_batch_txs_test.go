@@ -9,8 +9,10 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 
+	optypes "github.com/ethereum-optimism/optimism/op-core/types"
 	"github.com/ethereum-optimism/optimism/op-service/testutils"
 )
 
@@ -333,15 +335,15 @@ func TestSpanBatchTxsRecoverV(t *testing.T) {
 	rng := rand.New(rand.NewSource(0x123))
 
 	chainID := big.NewInt(rng.Int63n(1000))
-	isthmusSigner := types.NewIsthmusSigner(chainID)
+	pragueSigner := types.NewPragueSigner(chainID)
 	totalblockTxCount := 20 + rng.Intn(100)
 
 	cases := []txTypeTest{
 		{"unprotected legacy tx", testutils.RandomLegacyTx, types.HomesteadSigner{}},
-		{"legacy tx", testutils.RandomLegacyTx, isthmusSigner},
-		{"access list tx", testutils.RandomAccessListTx, isthmusSigner},
-		{"dynamic fee tx", testutils.RandomDynamicFeeTx, isthmusSigner},
-		{"setcode tx", testutils.RandomSetCodeTx, isthmusSigner},
+		{"legacy tx", testutils.RandomLegacyTx, pragueSigner},
+		{"access list tx", testutils.RandomAccessListTx, pragueSigner},
+		{"dynamic fee tx", testutils.RandomDynamicFeeTx, pragueSigner},
+		{"setcode tx", testutils.RandomSetCodeTx, pragueSigner},
 	}
 
 	for _, testCase := range cases {
@@ -425,14 +427,14 @@ func TestSpanBatchTxsRoundTrip(t *testing.T) {
 func TestSpanBatchTxsRoundTripFullTxs(t *testing.T) {
 	rng := rand.New(rand.NewSource(0x13377331))
 	chainID := big.NewInt(rng.Int63n(1000))
-	isthmusSigner := types.NewIsthmusSigner(chainID)
+	pragueSigner := types.NewPragueSigner(chainID)
 
 	cases := []txTypeTest{
 		{"unprotected legacy tx", testutils.RandomLegacyTx, types.HomesteadSigner{}},
-		{"legacy tx", testutils.RandomLegacyTx, isthmusSigner},
-		{"access list tx", testutils.RandomAccessListTx, isthmusSigner},
-		{"dynamic fee tx", testutils.RandomDynamicFeeTx, isthmusSigner},
-		{"setcode tx", testutils.RandomSetCodeTx, isthmusSigner},
+		{"legacy tx", testutils.RandomLegacyTx, pragueSigner},
+		{"access list tx", testutils.RandomAccessListTx, pragueSigner},
+		{"dynamic fee tx", testutils.RandomDynamicFeeTx, pragueSigner},
+		{"setcode tx", testutils.RandomSetCodeTx, pragueSigner},
 	}
 
 	for _, testCase := range cases {
@@ -461,17 +463,13 @@ func TestSpanBatchTxsRoundTripFullTxs(t *testing.T) {
 func TestSpanBatchTxsPostExecRoundTripFullTxs(t *testing.T) {
 	rng := rand.New(rand.NewSource(0x7d7331))
 	chainID := big.NewInt(901)
-	signer := types.NewIsthmusSigner(chainID)
+	signer := types.NewPragueSigner(chainID)
 
-	normalTx := testutils.RandomDynamicFeeTx(rng, signer)
-	postExecTx := testPostExecTx()
-
-	var txs [][]byte
-	for _, tx := range []*types.Transaction{normalTx, postExecTx} {
-		rawTx, err := tx.MarshalBinary()
-		require.NoError(t, err)
-		txs = append(txs, rawTx)
-	}
+	rawNormalTx, err := testutils.RandomDynamicFeeTx(rng, signer).MarshalBinary()
+	require.NoError(t, err)
+	rawPostExecTx, err := testPostExecTx().MarshalBinary()
+	require.NoError(t, err)
+	txs := [][]byte{rawNormalTx, rawPostExecTx}
 
 	sbt, err := newSpanBatchTxs(txs, chainID)
 	require.NoError(t, err)
@@ -479,6 +477,73 @@ func TestSpanBatchTxsPostExecRoundTripFullTxs(t *testing.T) {
 	txs2, err := sbt.fullTxs(chainID)
 	require.NoError(t, err)
 	require.Equal(t, txs, txs2)
+}
+
+// TestSpanBatchTxsPostExecFieldsMatchGeth pins the span batch fields that AddTxs
+// derives from a post-exec tx's canonical encoding against op-geth's view of the
+// same transaction. It is op-geth-specific by construction: upstream go-ethereum
+// does not decode the 0x7D class at all, which is why the fields are derived from
+// the encoding instead of from a go-ethereum transaction.
+func TestSpanBatchTxsPostExecFieldsMatchGeth(t *testing.T) {
+	raw, err := testPostExecTx().MarshalBinary()
+	require.NoError(t, err)
+	sbt, err := newSpanBatchTxs([][]byte{raw}, big.NewInt(901))
+	require.NoError(t, err)
+
+	gethTx := testPostExecGethTx(t)
+	v, r, s := gethTx.RawSignatureValues()
+	require.Equal(t, []int{int(gethTx.Type())}, sbt.txTypes)
+	require.Equal(t, []uint64{gethTx.Nonce()}, sbt.txNonces)
+	require.Equal(t, []uint64{gethTx.Gas()}, sbt.txGases)
+	require.Zero(t, sbt.txSigs[0].v.Cmp(v))
+	require.Zero(t, sbt.txSigs[0].r.ToBig().Cmp(r))
+	require.Zero(t, sbt.txSigs[0].s.ToBig().Cmp(s))
+	require.Equal(t, uint(0), sbt.yParityBits.Bit(0))
+
+	require.Nil(t, gethTx.To())
+	require.Empty(t, sbt.txTos, "a tx without recipient stores no address")
+	require.Equal(t, uint(1), sbt.contractCreationBits.Bit(0))
+
+	require.Equal(t, gethTx.Data(), testPostExecTx().Data, "op-geth carries the payload verbatim")
+	require.Equal(t, hexutil.Bytes(raw), sbt.txDatas[0])
+}
+
+// TestSpanBatchTxsAddTxsPostExec covers the span-position bookkeeping of post-exec
+// txs across multiple AddTxs calls: adding a trailing post-exec tx per block, block
+// by block, must yield the same fields as one call over all transactions, and
+// reconstruct every transaction verbatim.
+func TestSpanBatchTxsAddTxsPostExec(t *testing.T) {
+	rng := rand.New(rand.NewSource(0x7d0f5e7))
+	chainID := big.NewInt(901)
+	signer := types.NewPragueSigner(chainID)
+	rawPostExecTx, err := testPostExecTx().MarshalBinary()
+	require.NoError(t, err)
+
+	blocks := make([][][]byte, 3)
+	var allTxs [][]byte
+	for i := range blocks {
+		var txs [][]byte
+		for j := 0; j < 2; j++ {
+			rawTx, err := testutils.RandomDynamicFeeTx(rng, signer).MarshalBinary()
+			require.NoError(t, err)
+			txs = append(txs, rawTx)
+		}
+		blocks[i] = append(txs, rawPostExecTx)
+		allTxs = append(allTxs, blocks[i]...)
+	}
+
+	iterative, err := newSpanBatchTxs([][]byte{}, chainID)
+	require.NoError(t, err)
+	for _, txs := range blocks {
+		require.NoError(t, iterative.AddTxs(txs, chainID))
+	}
+	full, err := newSpanBatchTxs(allTxs, chainID)
+	require.NoError(t, err)
+	require.Equal(t, iterative, full)
+
+	fullTxs, err := full.fullTxs(chainID)
+	require.NoError(t, err)
+	require.Equal(t, allTxs, fullTxs)
 }
 
 func TestSpanBatchTxsPostExecSkipsChainIDValidation(t *testing.T) {
@@ -494,7 +559,7 @@ func TestSpanBatchTxsRejectsWrongChainIDForProtectedTx(t *testing.T) {
 	rng := rand.New(rand.NewSource(0x901902))
 	chainID := big.NewInt(901)
 	wrongChainID := big.NewInt(902)
-	tx := testutils.RandomDynamicFeeTx(rng, types.NewIsthmusSigner(wrongChainID))
+	tx := testutils.RandomDynamicFeeTx(rng, types.NewPragueSigner(wrongChainID))
 	rawTx, err := tx.MarshalBinary()
 	require.NoError(t, err)
 
@@ -508,7 +573,7 @@ func TestSpanBatchTxsRecoverVInvalidTxType(t *testing.T) {
 
 	var sbt spanBatchTxs
 
-	sbt.txTypes = []int{types.DepositTxType}
+	sbt.txTypes = []int{optypes.DepositTxType}
 	sbt.txSigs = []spanBatchSignature{{v: big.NewInt(0), r: nil, s: nil}}
 	sbt.yParityBits = new(big.Int)
 	sbt.protectedBits = new(big.Int)
@@ -520,14 +585,14 @@ func TestSpanBatchTxsRecoverVInvalidTxType(t *testing.T) {
 func TestSpanBatchTxsFullTxNotEnoughTxTos(t *testing.T) {
 	rng := rand.New(rand.NewSource(0x13572468))
 	chainID := big.NewInt(rng.Int63n(1000))
-	isthmusSigner := types.NewIsthmusSigner(chainID)
+	pragueSigner := types.NewPragueSigner(chainID)
 
 	cases := []txTypeTest{
 		{"unprotected legacy tx", testutils.RandomLegacyTx, types.HomesteadSigner{}},
-		{"legacy tx", testutils.RandomLegacyTx, isthmusSigner},
-		{"access list tx", testutils.RandomAccessListTx, isthmusSigner},
-		{"dynamic fee tx", testutils.RandomDynamicFeeTx, isthmusSigner},
-		{"setcode tx", testutils.RandomSetCodeTx, isthmusSigner},
+		{"legacy tx", testutils.RandomLegacyTx, pragueSigner},
+		{"access list tx", testutils.RandomAccessListTx, pragueSigner},
+		{"dynamic fee tx", testutils.RandomDynamicFeeTx, pragueSigner},
+		{"setcode tx", testutils.RandomSetCodeTx, pragueSigner},
 	}
 
 	for _, testCase := range cases {

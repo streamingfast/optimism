@@ -42,6 +42,7 @@ import { IOptimismPortal2 } from "interfaces/L1/IOptimismPortal2.sol";
 import { IL1StandardBridge } from "interfaces/L1/IL1StandardBridge.sol";
 import { IL1ERC721Bridge } from "interfaces/L1/IL1ERC721Bridge.sol";
 import { IOptimismMintableERC20Factory } from "interfaces/universal/IOptimismMintableERC20Factory.sol";
+import { ISP1Verifier } from "interfaces/vendor/ISP1Verifier.sol";
 
 /// @title Deploy
 /// @notice Script used to deploy a bedrock system. The entire system is deployed within the `run` function.
@@ -268,7 +269,8 @@ contract Deploy is Deployer {
                 superchainConfigProxy: superchainConfigProxy,
                 superchainProxyAdmin: superchainProxyAdmin,
                 l1ProxyAdminOwner: superchainProxyAdmin.owner(),
-                challenger: cfg.l2OutputOracleChallenger()
+                challenger: cfg.l2OutputOracleChallenger(),
+                sp1Verifier: ISP1Verifier(cfg.sp1Verifier())
             })
         );
 
@@ -279,6 +281,9 @@ contract Deploy is Deployer {
         artifacts.save("DelayedWETHImpl", address(dio.delayedWETHImpl));
         artifacts.save("PreimageOracle", address(dio.preimageOracleSingleton));
         artifacts.save("PermissionedDisputeGame", address(dio.permissionedDisputeGameImpl));
+        if (address(dio.sp1PlonkAdapterSingleton) != address(0)) {
+            artifacts.save("SP1PlonkAdapter", address(dio.sp1PlonkAdapterSingleton));
+        }
 
         // Get a contract set from the implementation addresses which were just deployed.
         Types.ContractSet memory impls = ChainAssertions.dioToContractSet(dio);
@@ -300,7 +305,7 @@ contract Deploy is Deployer {
         );
         GameType permGameType = DevFeatures.isDevFeatureEnabled(
             cfg.devFeatureBitmap(), DevFeatures.SUPER_ROOT_GAMES_MIGRATION
-        ) ? GameTypes.SUPER_PERMISSIONED_CANNON : GameTypes.PERMISSIONED_CANNON;
+        ) ? GameTypes.SUPER_PERMISSIONED : GameTypes.PERMISSIONED_CANNON;
         ChainAssertions.checkDisputeGameFactory(
             IDisputeGameFactory(impls.DisputeGameFactory), address(0), address(0), false, permGameType
         );
@@ -315,7 +320,12 @@ contract Deploy is Deployer {
             _mips: IMIPS64(address(dio.mipsSingleton))
         });
         ChainAssertions.checkSystemConfigImpls(impls);
-        ChainAssertions.checkAnchorStateRegistryProxy(IAnchorStateRegistry(impls.AnchorStateRegistry), false);
+        ChainAssertions.checkAnchorStateRegistryProxy(
+            IAnchorStateRegistry(impls.AnchorStateRegistry),
+            false,
+            GameType.wrap(0),
+            Proposal({ root: Hash.wrap(bytes32(0)), l2SequenceNumber: 0 })
+        );
     }
 
     /// @notice Deploy all of the OP Chain specific contracts
@@ -406,7 +416,7 @@ contract Deploy is Deployer {
         disputeGameConfigs[3] = IOPContractsManagerUtils.DisputeGameConfig({
             enabled: true,
             initBond: 0,
-            gameType: GameTypes.SUPER_PERMISSIONED_CANNON,
+            gameType: GameTypes.SUPER_PERMISSIONED,
             gameArgs: abi.encode(
                 IOPContractsManagerUtils.SuperPermissionedDisputeGameConfig({ proposer: cfg.l2OutputOracleProposer() })
             )
@@ -439,7 +449,7 @@ contract Deploy is Deployer {
                 root: Hash.wrap(cfg.faultGameGenesisOutputRoot()),
                 l2SequenceNumber: uint64(cfg.faultGameGenesisBlock())
             }),
-            startingRespectedGameType: GameTypes.SUPER_PERMISSIONED_CANNON,
+            startingRespectedGameType: GameTypes.SUPER_PERMISSIONED,
             basefeeScalar: cfg.basefeeScalar(),
             blobBasefeeScalar: cfg.blobbasefeeScalar(),
             gasLimit: uint64(cfg.l2GenesisBlockGasLimit()),
@@ -488,7 +498,7 @@ contract Deploy is Deployer {
         disputeGameConfigs[3] = IOPContractsManagerUtils.DisputeGameConfig({
             enabled: false,
             initBond: 0,
-            gameType: GameTypes.SUPER_PERMISSIONED_CANNON,
+            gameType: GameTypes.SUPER_PERMISSIONED,
             gameArgs: bytes("")
         });
         disputeGameConfigs[4] = IOPContractsManagerUtils.DisputeGameConfig({

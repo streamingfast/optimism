@@ -1,6 +1,7 @@
 package sysgo
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"sync"
@@ -138,7 +139,48 @@ func (n *OpGeth) Stop() {
 		return
 	}
 	n.logger.Info("Closing op-geth", "name", n.name, "chain", n.l2Net.ChainID())
+	n.clearProxyUpstreams()
 	closeErr := n.l2Geth.Close()
 	n.logger.Info("Closed op-geth", "name", n.name, "chain", n.l2Net.ChainID(), "err", closeErr)
 	n.l2Geth = nil
+}
+
+// Callers must hold n.mu.
+func (n *OpGeth) clearProxyUpstreams() {
+	if n.userProxy != nil {
+		n.userProxy.ClearUpstream()
+	}
+	if n.authProxy != nil {
+		n.authProxy.ClearUpstream()
+	}
+}
+
+func (n *OpGeth) StartControlled(ctx context.Context) error {
+	return runControlStart(ctx, n.Running, n.Start)
+}
+
+func (n *OpGeth) StopControlled(ctx context.Context) error {
+	n.mu.Lock()
+	if n.l2Geth == nil {
+		n.mu.Unlock()
+		return nil
+	}
+	l2Geth := n.l2Geth
+	n.clearProxyUpstreams()
+	n.mu.Unlock()
+
+	err := l2Geth.Close()
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.l2Geth == l2Geth {
+		n.l2Geth = nil
+	}
+	return err
+}
+
+func (n *OpGeth) Running() bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.l2Geth != nil
 }

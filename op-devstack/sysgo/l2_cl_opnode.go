@@ -77,6 +77,7 @@ func (n *OpNode) Stop() {
 		n.logger.Warn("Op-node already stopped")
 		return
 	}
+	n.clearProxyUpstreams()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // force-quit
 	n.logger.Info("Closing op-node")
@@ -84,4 +85,44 @@ func (n *OpNode) Stop() {
 	n.logger.Info("Closed op-node", "err", closeErr)
 
 	n.opNode = nil
+}
+
+func (n *OpNode) StartControlled(ctx context.Context) error {
+	return runControlStart(ctx, n.Running, n.Start)
+}
+
+func (n *OpNode) StopControlled(ctx context.Context) error {
+	n.mu.Lock()
+	if n.opNode == nil {
+		n.mu.Unlock()
+		return nil
+	}
+	opNode := n.opNode
+	n.clearProxyUpstreams()
+	n.mu.Unlock()
+
+	err := opNode.Stop(ctx)
+	if err != nil && !opNode.Stopped() {
+		return err
+	}
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.opNode == opNode {
+		n.opNode = nil
+	}
+	return nil
+}
+
+// Callers must hold n.mu.
+func (n *OpNode) clearProxyUpstreams() {
+	if n.userProxy != nil {
+		n.userProxy.ClearUpstream()
+	}
+}
+
+func (n *OpNode) Running() bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.opNode != nil
 }

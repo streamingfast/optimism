@@ -4,7 +4,6 @@ use alloy_op_evm::{
     OpEvmContext, OpTxError,
     post_exec::{
         PostExecEvmFactoryAdapter, PostExecEvmFactoryHooks, PostExecExecutedTx, PostExecTxContext,
-        WarmingState,
     },
 };
 use alloy_primitives::{Bytes, address};
@@ -17,7 +16,7 @@ use reth_node_builder::{
     BuilderContext, FullNodeTypes, Node, NodeBuilder, NodeConfig, NodeTypes,
     components::ExecutorBuilder,
 };
-use reth_optimism_chainspec::{BASE_MAINNET, OP_SEPOLIA, OpChainSpec};
+use reth_optimism_chainspec::{OP_MAINNET, OP_SEPOLIA, OpChainSpec};
 use reth_optimism_evm::{OpBlockExecutorFactory, OpEvm, OpEvmFactory, OpRethReceiptBuilder, OpTx};
 use reth_optimism_node::{OpEvmConfig, OpExecutorBuilder, OpNode, args::RollupArgs};
 use reth_optimism_primitives::OpPrimitives;
@@ -35,7 +34,7 @@ use std::sync::OnceLock;
 #[test]
 fn test_basic_setup() {
     // parse CLI -> config
-    let config = NodeConfig::new(BASE_MAINNET.clone());
+    let config = NodeConfig::new(OP_MAINNET.clone());
     let db = create_test_rw_db();
     let args = RollupArgs::default();
     let op_node = OpNode::new(args);
@@ -132,6 +131,8 @@ fn test_setup_custom_precompiles() {
     }
 
     impl PostExecEvmFactoryHooks for UniEvmFactory {
+        type Snapshot = ();
+
         fn begin_post_exec_tx<DB, I>(evm: &mut Self::Evm<DB, I>, ctx: PostExecTxContext)
         where
             DB: Database,
@@ -148,20 +149,20 @@ fn test_setup_custom_precompiles() {
             evm.take_last_post_exec_tx_result()
         }
 
-        fn warming_state<DB, I>(evm: &Self::Evm<DB, I>) -> WarmingState
+        fn refund_snapshot<DB, I>(evm: &Self::Evm<DB, I>) -> Self::Snapshot
         where
             DB: Database,
             I: Inspector<Self::Context<DB>>,
         {
-            evm.warming_state()
+            evm.refund_snapshot()
         }
 
-        fn seed_warming_state<DB, I>(evm: &mut Self::Evm<DB, I>, state: WarmingState)
+        fn seed_refund_snapshot<DB, I>(evm: &mut Self::Evm<DB, I>, state: Self::Snapshot)
         where
             DB: Database,
             I: Inspector<Self::Context<DB>>,
         {
-            evm.seed_warming_state(state);
+            evm.seed_refund_snapshot(state);
         }
     }
 

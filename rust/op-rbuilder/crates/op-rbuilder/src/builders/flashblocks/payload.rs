@@ -4,8 +4,8 @@ use crate::{
         BuilderConfig,
         builder_tx::BuilderTransactions,
         context::{
-            BlockBuilderStateDbExt, OpPayloadBuilderCtx, compute_post_exec_mode,
-            last_receipt_with_cumulative_gas,
+            BlockBuilderStateDbExt, OpPayloadBuilderCtx, build_current_post_exec_tx,
+            compute_post_exec_mode, last_receipt_with_cumulative_gas,
         },
         flashblocks::{best_txs::BestFlashblocksTxs, config::FlashBlocksConfigExt},
         generator::{BlockCell, BuildArguments, PayloadBuilder},
@@ -16,7 +16,7 @@ use crate::{
     traits::{ClientBounds, PoolBounds},
 };
 use alloy_consensus::{
-    BlockBody, EMPTY_OMMER_ROOT_HASH, Header, Sealable, constants::EMPTY_WITHDRAWALS, proofs,
+    BlockBody, EMPTY_OMMER_ROOT_HASH, Header, constants::EMPTY_WITHDRAWALS, proofs,
 };
 use alloy_eips::{Encodable2718, eip7685::EMPTY_REQUESTS_HASH, merge::BEACON_NONCE};
 use alloy_evm::block::BlockExecutor as AlloyBlockExecutor;
@@ -24,16 +24,14 @@ use alloy_op_evm::PreRefundGasUsed;
 use alloy_primitives::{Address, B256, U256, map::foldhash::HashMap};
 use core::time::Duration;
 use eyre::WrapErr as _;
-use op_alloy_consensus::{SDMGasEntry, build_post_exec_tx};
+use op_alloy_consensus::SDMGasEntry;
 use reth_basic_payload_builder::{BuildOutcome, PayloadConfig};
 use reth_chainspec::EthChainSpec;
 use reth_evm::{ConfigureEvm, execute::BlockBuilder};
 use reth_execution_types::{BlockExecutionOutput, BlockExecutionResult};
 use reth_node_api::{Block, NodePrimitives, PayloadBuilderError};
 use reth_optimism_consensus::{calculate_receipt_root_no_memo_optimism, isthmus};
-use reth_optimism_evm::{
-    OpEvmConfig, OpNextBlockEnvAttributes, PostExecExecutorExt, PostExecMode, WarmingState,
-};
+use reth_optimism_evm::{OpEvmConfig, OpNextBlockEnvAttributes, PostExecExecutorExt, PostExecMode};
 use reth_optimism_forks::OpHardforks;
 use reth_optimism_node::{OpBuiltPayload, OpPayloadBuilderAttributes};
 use reth_optimism_payload_builder::OpPayloadAttrs;
@@ -85,13 +83,13 @@ pub(super) struct FlashblocksExecutionInfo {
     last_flashblock_index: usize,
     /// Block-global SDM refund entries already captured from previous flashblock builders.
     post_exec_entries: Vec<SDMGasEntry>,
-    /// Block-scoped SDM warming provenance accumulated across prior flashblock executors.
+    /// Opaque refund-policy snapshot accumulated across prior flashblock executors.
     ///
-    /// Each flashblock is built with a fresh executor (hence a fresh warming inspector), but SDM
-    /// refunds are block-scoped. Carrying this state into each new flashblock's executor keeps the
-    /// per-flashblock refund set identical to a single canonical pass over the whole block — see
-    /// the seeding in [`OpPayloadBuilder::build_next_flashblock`] and the capture below.
-    warming_state: WarmingState,
+    /// Each flashblock is built with a fresh executor, but refund policies may carry block-scoped
+    /// state. Carrying the snapshot into each new executor keeps the per-flashblock refund set
+    /// identical to a single canonical pass over the whole block. The public null policy uses the
+    /// unit snapshot, while downstream policies can substitute their own opaque state.
+    refund_policy_snapshot: (),
 }
 
 /// Inputs threaded into [`build_block`] when the builder is in [`PostExecMode::Produce`].
@@ -331,6 +329,7 @@ where
             max_gas_per_txn: self.config.max_gas_per_txn,
             address_gas_limiter: self.address_gas_limiter.clone(),
             post_exec_mode,
+            interop_failsafe: self.config.interop_failsafe.clone(),
         })
     }
 
@@ -375,7 +374,7 @@ where
         let post_exec_mode = compute_post_exec_mode(
             &self.evm_config,
             timestamp,
-            &self.config.sdm_post_exec_opt_in,
+            &self.config.operator_sdm_opt_in,
         );
         let ctx = self
             .get_op_payload_builder_ctx(
@@ -442,9 +441,9 @@ where
                 post_exec_inputs,
             )?;
             info.extra.post_exec_entries = post_exec_entries;
-            // Carry the base block's warming provenance (deposits + builder tx) into the first
-            // flashblock executor; subsequent flashblocks chain off this in build_next_flashblock.
-            info.extra.warming_state = builder.executor().warming_state();
+            // Carry the base block's opaque refund-policy state into the first flashblock executor;
+            // subsequent flashblocks chain off this in build_next_flashblock.
+            info.extra.refund_policy_snapshot = builder.executor().refund_snapshot();
 
             (info, payload, fb_payload)
         };
@@ -688,7 +687,7 @@ where
     where
         Builder:
             reth_evm::execute::BlockBuilder<Primitives = reth_optimism_primitives::OpPrimitives>,
-        Builder::Executor: PostExecExecutorExt
+        Builder::Executor: PostExecExecutorExt<Snapshot = ()>
             + AlloyBlockExecutor<
                 Transaction = OpTransactionSigned,
                 Receipt = OpReceipt,
@@ -699,13 +698,15 @@ where
     {
         let flashblock_index = ctx.flashblock_index();
         let post_exec_index_offset = info.executed_transactions.len() as u64;
-        // Seed this flashblock's fresh executor with the block-scoped SDM warming provenance
-        // accumulated by prior flashblocks (and the base block). Without this, each fresh executor
-        // would reset warming at the flashblock boundary and attribute a refund set that diverges
-        // from op-reth's single canonical pass. Recaptured after the build below.
+        // Seed this fresh executor with opaque block-scoped refund-policy state accumulated by
+        // prior flashblocks (and the base block). Recaptured after the build below.
+        //
+        // Written as one expression so it stays correct if `Snapshot` stops being `()`; clippy
+        // objects only because the public policy's snapshot type is currently the unit type.
+        #[allow(clippy::unit_arg)]
         builder
             .executor_mut()
-            .seed_warming_state(core::mem::take(&mut info.extra.warming_state));
+            .seed_refund_snapshot(core::mem::take(&mut info.extra.refund_policy_snapshot));
         let mut target_gas_for_batch = ctx.extra_ctx.target_gas_for_batch;
         let mut target_da_for_batch = ctx.extra_ctx.target_da_for_batch;
         let mut target_da_footprint_for_batch = ctx.extra_ctx.target_da_footprint_for_batch;
@@ -854,8 +855,8 @@ where
             }
             Ok((new_payload, mut fb_payload)) => {
                 info.extra.post_exec_entries = post_exec_entries;
-                // Carry this flashblock's accumulated warming provenance into the next flashblock.
-                info.extra.warming_state = builder.executor().warming_state();
+                // Carry this flashblock's opaque refund-policy state into the next flashblock.
+                info.extra.refund_policy_snapshot = builder.executor().refund_snapshot();
                 fb_payload.index = flashblock_index;
                 fb_payload.base = None;
 
@@ -1222,22 +1223,6 @@ where
     })
 }
 
-fn build_current_post_exec_tx<ExtraCtx>(
-    ctx: &OpPayloadBuilderCtx<ExtraCtx>,
-    entries: Vec<SDMGasEntry>,
-) -> Option<OpTransactionSigned>
-where
-    ExtraCtx: std::fmt::Debug + Default,
-{
-    if !matches!(ctx.post_exec_mode, PostExecMode::Produce) || entries.is_empty() {
-        return None;
-    }
-
-    Some(OpTransactionSigned::from(
-        build_post_exec_tx(ctx.block_number(), entries).seal_slow(),
-    ))
-}
-
 #[allow(clippy::type_complexity)]
 fn execute_pre_steps<'a, DB, ExtraCtx>(
     state: &'a mut State<DB>,
@@ -1246,7 +1231,7 @@ fn execute_pre_steps<'a, DB, ExtraCtx>(
     (
         impl reth_evm::execute::BlockBuilder<
             Primitives = reth_optimism_primitives::OpPrimitives,
-            Executor: PostExecExecutorExt
+            Executor: PostExecExecutorExt<Snapshot = ()>
                           + AlloyBlockExecutor<
                 Evm: alloy_evm::Evm<DB: core::ops::DerefMut<Target = State<DB>>>,
                 Result: PreRefundGasUsed,
@@ -1457,6 +1442,7 @@ where
         execution_output: Arc::new(execution_output),
         hashed_state: Arc::new(hashed_state),
         trie_updates: Arc::new(trie_output),
+        changed_paths: None,
     };
     debug!(target: "payload_builder", message = "Executed block created");
 

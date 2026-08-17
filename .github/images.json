@@ -95,14 +95,6 @@
       "target": "op-test-sequencer",
       "paths": ["op-test-sequencer/**"]
     },
-    "cannon": {
-      "type": "go",
-      "check": "go",
-      "mode": "bake",
-      "bake_file": "docker-bake.hcl",
-      "target": "cannon",
-      "paths": ["cannon/**", "op-preimage/**"]
-    },
     "op-deployer": {
       "type": "go",
       "check": "go",
@@ -159,6 +151,14 @@
       "target": "kona-host",
       "paths": ["rust/**"]
     },
+    "kona-sp1-proposer": {
+      "type": "rust",
+      "check": "rust",
+      "mode": "bake",
+      "bake_file": "docker-bake.hcl",
+      "target": "kona-sp1-proposer",
+      "paths": ["rust/**"]
+    },
     "op-reth": {
       "type": "rust",
       "check": "rust",
@@ -182,14 +182,6 @@
       "bake_file": "docker-bake.hcl",
       "target": "rollup-boost",
       "paths": ["rust/**"]
-    },
-    "cannon-builder": {
-      "type": "rust",
-      "check": "none",
-      "mode": "bake",
-      "bake_file": "docker-bake.hcl",
-      "target": "cannon-builder",
-      "paths": ["rust/kona/docker/cannon/**"]
     },
     "ci-base-clang": {
       "check": "none",

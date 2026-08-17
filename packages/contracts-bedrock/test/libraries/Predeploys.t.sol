@@ -7,6 +7,7 @@ import { EIP1967Helper } from "test/mocks/EIP1967Helper.sol";
 
 // Libraries
 import { Predeploys } from "src/libraries/Predeploys.sol";
+import { DeployUtils } from "scripts/libraries/DeployUtils.sol";
 import { ForgeArtifacts } from "scripts/libraries/ForgeArtifacts.sol";
 import { Fork } from "scripts/libraries/Config.sol";
 import { Features } from "src/libraries/Features.sol";
@@ -19,12 +20,13 @@ abstract contract Predeploys_TestInit is CommonTest {
     /// Internal helpers
     //////////////////////////////////////////////////////
 
-    /// @notice Returns true if the address is a predeploy that has a different code in the
-    ///         custom gas token mode, derived from the registry from `isVariant` && `isCustomGasToken`.
+    /// @notice Returns true if the predeploy has a custom gas token implementation variant.
     function _customGasTokenCodeDiffer(address _addr) internal pure returns (bool) {
         Predeploys.PredeployRecord[] memory records = Predeploys.getAllRecords();
         for (uint256 i = 0; i < records.length; i++) {
-            if (records[i].proxy == _addr && records[i].isVariant && records[i].isCustomGasToken) return true;
+            if (records[i].proxy == _addr && records[i].variants.length > uint256(Predeploys.VariantKind.CGT)) {
+                return true;
+            }
         }
         return false;
     }
@@ -69,7 +71,7 @@ abstract contract Predeploys_TestInit is CommonTest {
             return false;
         }
         if (_r.isInterop) {
-            return _isInterop && uint256(_fork) >= uint256(Fork.INTEROP);
+            return _isInterop && uint256(_fork) >= uint256(Fork.LAGOON);
         }
         if (_r.isCustomGasToken) return _isCustomGasToken;
         return true;
@@ -80,7 +82,7 @@ abstract contract Predeploys_TestInit is CommonTest {
         uint256 count = 2048;
         uint160 prefix = uint160(0x420) << 148;
 
-        bytes memory proxyCode = vm.getDeployedCode("Proxy.sol:Proxy");
+        bytes memory proxyCode = DeployUtils.getDeployedCode("Proxy");
 
         for (uint256 i = 0; i < count; i++) {
             address addr = address(prefix | uint160(i));
@@ -108,7 +110,7 @@ abstract contract Predeploys_TestInit is CommonTest {
             string memory cname = Predeploys.getName(addr);
             assertNotEq(cname, "", "must have a name");
 
-            bytes memory supposedCode = vm.getDeployedCode(string.concat(cname, ".sol:", cname));
+            bytes memory supposedCode = DeployUtils.getDeployedCode(cname);
             assertNotEq(supposedCode.length, 0, "must have supposed code");
 
             if (proxied == false) {
@@ -198,13 +200,6 @@ contract Predeploys_Uncategorized_Test is Predeploys_TestInit {
         skipIfSysFeatureDisabled(Features.CUSTOM_GAS_TOKEN);
         _test_predeploys(Fork.ISTHMUS, true, false);
     }
-
-    /// @notice Tests that the predeploy addresses are set correctly. They have code
-    ///         and the proxied accounts have the correct admin. Using l2cm.
-    function test_predeploys_l2cm_succeeds() external {
-        skipIfDevFeatureDisabled(DevFeatures.L2CM);
-        _test_predeploys(Fork.ISTHMUS, false, false);
-    }
 }
 
 /// @title Predeploys_GetAllRecords_Test
@@ -220,7 +215,7 @@ contract Predeploys_GetAllRecords_Test is Predeploys_TestInit {
             if (seenNonProxied) {
                 assertTrue(
                     !records[i].isProxied || records[i].isDeprecated,
-                    string.concat(records[i].name, ": proxied record appears after non-proxied record")
+                    string.concat(Predeploys.implName(records[i]), ": proxied record appears after non-proxied record")
                 );
             }
         }
@@ -236,7 +231,9 @@ contract Predeploys_GetAllRecords_Test is Predeploys_TestInit {
             if (seenDeprecated) {
                 assertTrue(
                     records[i].isDeprecated,
-                    string.concat(records[i].name, ": non-deprecated record appears after deprecated record")
+                    string.concat(
+                        Predeploys.implName(records[i]), ": non-deprecated record appears after deprecated record"
+                    )
                 );
             }
         }
@@ -256,13 +253,13 @@ contract Predeploys_UncategorizedInterop_Test is Predeploys_TestInit {
     /// @notice Tests that the predeploy addresses are set correctly. They have code and the
     ///         proxied accounts have the correct admin. Using interop.
     function test_predeploys_succeeds() external {
-        _test_predeploys(Fork.INTEROP, false, true);
+        _test_predeploys(Fork.LAGOON, false, true);
     }
 
     /// @notice Tests that the predeploy addresses are set correctly. They have code and the
     ///         proxied accounts have the correct admin. Using interop with custom gas token.
     function test_predeploys_customGasToken_succeeds() external {
         skipIfSysFeatureDisabled(Features.CUSTOM_GAS_TOKEN);
-        _test_predeploys(Fork.INTEROP, true, true);
+        _test_predeploys(Fork.LAGOON, true, true);
     }
 }

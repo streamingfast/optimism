@@ -1,10 +1,10 @@
 //! OP Proofs management commands
 
 use clap::{Parser, Subcommand};
+use reth_chainspec::EthChainSpec;
 use reth_cli::chainspec::ChainSpecParser;
 use reth_cli_commands::common::CliNodeTypes;
-use reth_optimism_chainspec::OpChainSpec;
-use reth_optimism_primitives::OpPrimitives;
+use reth_node_metrics::recorder::install_prometheus_recorder;
 use std::sync::Arc;
 
 pub mod backfill;
@@ -20,12 +20,20 @@ pub struct Command<C: ChainSpecParser> {
     command: Subcommands<C>,
 }
 
-impl<C: ChainSpecParser<ChainSpec = OpChainSpec>> Command<C> {
+impl<C: ChainSpecParser<ChainSpec: EthChainSpec>> Command<C> {
     /// Execute `op-proofs` command
-    pub async fn execute<N: CliNodeTypes<ChainSpec = C::ChainSpec, Primitives = OpPrimitives>>(
+    pub async fn execute<N: CliNodeTypes<ChainSpec = C::ChainSpec>>(
         self,
         runtime: reth_tasks::Runtime,
     ) -> eyre::Result<()> {
+        // Drain the Prometheus recorder's per-metric `AtomicBucket`s on a 5s tick.
+        // The buckets are append-only; without this, `reth_trie::trie::StateRoot::calculate`
+        // (run per backfilled/initialized block) leaks ~3 KB/block via histogram observations
+        // and OOMs on chain-sized runs. See paradigmxyz/reth#12664. op-proofs subcommands have no
+        // endpoint, so we spawn upkeep here directly. Idempotent — safe under repeated
+        // invocation.
+        install_prometheus_recorder().spawn_upkeep();
+
         match self.command {
             Subcommands::Init(cmd) => cmd.execute::<N>(runtime).await,
             Subcommands::Backfill(cmd) => cmd.execute::<N>(runtime).await,

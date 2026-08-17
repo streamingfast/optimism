@@ -14,7 +14,8 @@ use alloy_rpc_types_engine::{
 };
 use op_alloy_consensus::{EIP1559ParamError, encode_holocene_extra_data, encode_jovian_extra_data};
 use op_alloy_rpc_types_engine::{
-    OpExecutionPayloadEnvelopeV3, OpExecutionPayloadEnvelopeV4, OpExecutionPayloadV4,
+    OpExecutionPayloadEnvelope, OpExecutionPayloadEnvelopeV3, OpExecutionPayloadEnvelopeV4,
+    OpExecutionPayloadV4,
 };
 use reth_chainspec::EthChainSpec;
 use reth_optimism_evm::OpNextBlockEnvAttributes;
@@ -63,7 +64,7 @@ impl reth_payload_primitives::ExecutionPayload for OpExecData {
     }
 
     fn withdrawals(&self) -> Option<&Vec<alloy_eips::eip4895::Withdrawal>> {
-        self.0.withdrawals()
+        self.0.payload.as_v2().map(|payload| &payload.withdrawals)
     }
 
     fn block_access_list(&self) -> Option<&Bytes> {
@@ -476,7 +477,13 @@ where
     fn from(value: OpBuiltPayload<N>) -> Self {
         let block = Arc::unwrap_or_clone(value.block);
         let hash = block.hash();
-        Self(OpExecutionData::from_block_unchecked(hash, &block.into_block().into_ethereum_block()))
+        Self(OpExecutionData::from(
+            OpExecutionPayloadEnvelope::from_block_unchecked(
+                hash,
+                &block.into_block().into_ethereum_block(),
+            )
+            .expect("built OP blocks must normalize"),
+        ))
     }
 }
 
@@ -709,6 +716,7 @@ mod tests {
                 withdrawals: Some([].into()),
                 parent_beacon_block_root: b256!("0x8fe0193b9bf83cb7e5a08538e494fecc23046aab9a497af3704f4afdae3250ff").into(),
                 slot_number: None,
+                target_gas_limit: None,
             },
             transactions: Some([bytes!("7ef8f8a0dc19cfa777d90980e4875d0a548a881baaa3f83f14d1bc0d3038bc329350e54194deaddeaddeaddeaddeaddeaddeaddeaddead00019442000000000000000000000000000000000000158080830f424080b8a4440a5e20000f424000000000000000000000000300000000670d6d890000000000000125000000000000000000000000000000000000000000000000000000000000000700000000000000000000000000000000000000000000000000000000000000014bf9181db6e381d4384bbf69c48b0ee0eed23c6ca26143c6d2544f9d39997a590000000000000000000000007f83d659683caf2767fd3c720981d51f5bc365bc")].into()),
             no_tx_pool: None,
@@ -741,6 +749,7 @@ mod tests {
                 withdrawals: Some([].into()),
                 parent_beacon_block_root: b256!("0x8fe0193b9bf83cb7e5a08538e494fecc23046aab9a497af3704f4afdae3250ff").into(),
                 slot_number: None,
+                target_gas_limit: None,
             },
             transactions: Some([bytes!("7ef8f8a0dc19cfa777d90980e4875d0a548a881baaa3f83f14d1bc0d3038bc329350e54194deaddeaddeaddeaddeaddeaddeaddeaddead00019442000000000000000000000000000000000000158080830f424080b8a4440a5e20000f424000000000000000000000000300000000670d6d890000000000000125000000000000000000000000000000000000000000000000000000000000000700000000000000000000000000000000000000000000000000000000000000014bf9181db6e381d4384bbf69c48b0ee0eed23c6ca26143c6d2544f9d39997a590000000000000000000000007f83d659683caf2767fd3c720981d51f5bc365bc")].into()),
             no_tx_pool: None,

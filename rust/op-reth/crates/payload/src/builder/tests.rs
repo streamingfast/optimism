@@ -1,5 +1,6 @@
 use super::{
-    ExecutionInfo, OpPayloadBuilderCtx, build_post_exec_recovered_tx, try_include_post_exec_tx,
+    CommittedTxGas, ExecutionInfo, OpPayloadBuilderCtx, PayloadTransactionsWithCommitHook,
+    RethPayloadTransactions, build_post_exec_recovered_tx, try_include_post_exec_tx,
 };
 use crate::{OpPayloadBuilderAttributes, config::OpBuilderConfig};
 use alloy_consensus::{
@@ -8,22 +9,27 @@ use alloy_consensus::{
 };
 use alloy_eips::{
     eip2718::{Encodable2718, WithEncoded},
-    eip2930::AccessList,
+    eip2930::{AccessList, AccessListItem},
     eip7702::SignedAuthorization,
 };
 use alloy_evm::RecoveredTx;
 use alloy_primitives::{Address, B64, B256, Bytes, Signature, TxHash, TxKind, U256};
 use alloy_rpc_types_eth::erc4337::TransactionConditional;
-use op_alloy_consensus::{SDMGasEntry, build_post_exec_tx};
+use op_alloy_consensus::{
+    POST_EXEC_PAYLOAD_VERSION, PostExecPayload, SDMGasEntry, build_post_exec_tx,
+};
 use reth_basic_payload_builder::PayloadConfig;
 use reth_chainspec::MIN_TRANSACTION_GAS;
 use reth_evm::execute::{BlockBuilder, BlockExecutionError};
 use reth_optimism_chainspec::{OpChainSpec, OpChainSpecBuilder};
-use reth_optimism_evm::{OpEvmConfig, PostExecMode};
+use reth_optimism_evm::{OpEvmConfig, PostExecMode, PreRefundGasUsed};
 use reth_optimism_primitives::{OpPrimitives, OpTransactionSigned};
 use reth_optimism_txpool::{
-    OpPooledTransaction, OpPooledTx, conditional::MaybeConditionalTransaction,
-    estimated_da_size::DataAvailabilitySized, interop::MaybeInteropTransaction,
+    OpPooledTransaction, OpPooledTx,
+    conditional::MaybeConditionalTransaction,
+    estimated_da_size::DataAvailabilitySized,
+    interop::{InteropFailsafe, MaybeInteropTransaction},
+    interop_filter::CROSS_L2_INBOX_ADDRESS,
 };
 use reth_payload_builder_primitives::PayloadBuilderError;
 use reth_payload_util::PayloadTransactionsFixed;
@@ -63,7 +69,7 @@ fn interop_ctx(
     OpPayloadBuilderAttributes<OpTransactionSigned>,
 > {
     let gas_limit = 1_000_000;
-    let chain_spec = Arc::new(OpChainSpecBuilder::base_mainnet().interop_activated().build());
+    let chain_spec = Arc::new(OpChainSpecBuilder::optimism_mainnet().lagoon_activated().build());
     let parent = SealedHeader::seal_slow(Header {
         gas_limit,
         number: 0,
@@ -86,7 +92,7 @@ fn interop_ctx(
     };
     let builder_config = OpBuilderConfig::default();
     if opt_in {
-        builder_config.sdm_post_exec_opt_in.set(true);
+        builder_config.operator_sdm_opt_in.set(true);
     }
 
     OpPayloadBuilderCtx {
@@ -147,22 +153,58 @@ fn payload_builder_ctx(
     }
 }
 
-fn op_pooled_tx(nonce: u64, signer: Address, recipient: Address) -> OpPooledTransaction {
-    let tx: OpTransactionSigned = TxEip1559 {
-        chain_id: 8453,
+/// Signs `tx` with the test signature and wraps it as an [`OpPooledTransaction`] recovered to
+/// `signer`. Shared tail of every pool-tx helper.
+fn op_pooled_tx_from(signer: Address, tx: TxEip1559) -> OpPooledTransaction {
+    let tx: OpTransactionSigned = tx.into_signed(Signature::test_signature()).into();
+    let encoded_len = tx.encode_2718_len();
+    OpPooledTransaction::new(Recovered::new_unchecked(tx, signer), encoded_len)
+}
+
+/// A minimal EIP-1559 transfer to `recipient` at `nonce`, with `gas_limit` and everything else at
+/// the test defaults. The base every pool-tx helper customizes.
+fn base_pooled_tx(nonce: u64, recipient: Address, gas_limit: u64) -> TxEip1559 {
+    TxEip1559 {
+        chain_id: 10,
         nonce,
-        gas_limit: MIN_TRANSACTION_GAS,
+        gas_limit,
         max_fee_per_gas: 1,
         max_priority_fee_per_gas: 1,
         to: TxKind::Call(recipient),
         value: U256::ZERO,
         ..Default::default()
     }
-    .into_signed(Signature::test_signature())
-    .into();
-    let encoded_len = tx.encode_2718_len();
+}
 
-    OpPooledTransaction::new(Recovered::new_unchecked(tx, signer), encoded_len)
+fn op_pooled_tx(nonce: u64, signer: Address, recipient: Address) -> OpPooledTransaction {
+    op_pooled_tx_from(signer, base_pooled_tx(nonce, recipient, MIN_TRANSACTION_GAS))
+}
+
+/// Like [`op_pooled_tx`], but attaches `input` calldata so the transaction's committed gas varies
+/// with the payload length. Distinct calldata therefore yields distinct per-tx gas, which lets a
+/// test detect gas being attributed to the wrong transaction.
+fn op_pooled_tx_with_input(
+    nonce: u64,
+    signer: Address,
+    recipient: Address,
+    input: Bytes,
+) -> OpPooledTransaction {
+    let tx = TxEip1559 { input, ..base_pooled_tx(nonce, recipient, 1_000_000) };
+    op_pooled_tx_from(signer, tx)
+}
+
+/// Builds an interop pool tx: a `CROSS_L2_INBOX_ADDRESS` access-list entry makes `is_interop_tx`
+/// match it; the gas limit covers the access-list intrinsic cost so it executes when failsafe is
+/// off.
+fn op_interop_pooled_tx(nonce: u64, signer: Address, recipient: Address) -> OpPooledTransaction {
+    let tx = TxEip1559 {
+        access_list: AccessList(vec![AccessListItem {
+            address: CROSS_L2_INBOX_ADDRESS,
+            storage_keys: vec![B256::ZERO],
+        }]),
+        ..base_pooled_tx(nonce, recipient, 100_000)
+    };
+    op_pooled_tx_from(signer, tx)
 }
 
 fn tx_hashes<'a>(txs: impl IntoIterator<Item = &'a Recovered<OpTransactionSigned>>) -> Vec<TxHash> {
@@ -179,9 +221,25 @@ where
     T: PoolTransaction<Consensus = OpTransactionSigned> + OpPooledTx,
 {
     let gas_limit = 1_000_000;
-    let chain_spec = Arc::new(OpChainSpecBuilder::base_mainnet().regolith_activated().build());
+    let chain_spec = Arc::new(OpChainSpecBuilder::optimism_mainnet().regolith_activated().build());
     let ctx = payload_builder_ctx(chain_spec, gas_limit);
+    run_execute_best_transactions_with_ctx(ctx, signer, txs, gas_limit_cap, committed_txs)
+}
 
+fn run_execute_best_transactions_with_ctx<T>(
+    ctx: OpPayloadBuilderCtx<
+        OpEvmConfig<OpChainSpec, OpPrimitives>,
+        OpChainSpec,
+        OpPayloadBuilderAttributes<OpTransactionSigned>,
+    >,
+    signer: Address,
+    txs: Vec<T>,
+    gas_limit_cap: Option<u64>,
+    committed_txs: Option<&mut Vec<Recovered<OpTransactionSigned>>>,
+) -> (ExecutionInfo, Vec<TxHash>)
+where
+    T: PoolTransaction<Consensus = OpTransactionSigned> + OpPooledTx + Clone,
+{
     let mut state_provider = StateProviderTest::default();
     state_provider.insert_account(
         signer,
@@ -203,7 +261,7 @@ where
         ctx.execute_best_transactions(
             &mut info,
             &mut builder,
-            best_txs,
+            RethPayloadTransactions(best_txs),
             gas_limit_cap,
             committed_txs
         )
@@ -286,6 +344,48 @@ fn rebuilds_derived_block_with_embedded_post_exec_tx_regardless_of_opt_in() {
     }
 }
 
+/// `block_builder_with_mode` must build against the supplied snapshot and never re-read the
+/// opt-in. `build()` resolves [`OpPayloadBuilderCtx::post_exec_mode`] exactly once and reuses that
+/// snapshot for both EVM construction and the later decision to append the `0x7D`; re-reading the
+/// runtime-mutable opt-in for the append could disagree with the mode the EVM was built in, leaving
+/// a block whose refunded state has no matching post-exec tx (or vice versa). We assert the builder
+/// honors the passed mode by deliberately mismatching it against the live opt-in: `Produce` with
+/// the opt-in OFF accepts an embedded `0x7D`, while `Disabled` with the opt-in ON rejects it.
+#[test]
+fn block_builder_with_mode_honors_snapshot_over_live_opt_in() {
+    // Opt-in OFF, but the snapshot pins Produce: the embedded 0x7D must be accepted.
+    let produce_ctx = interop_ctx(false, false, Some(Vec::new()));
+    let provider = StateProviderTest::default();
+    let mut db = State::builder()
+        .with_database(StateProviderDatabase::new(&provider))
+        .with_bundle_update()
+        .build();
+    let mut builder = produce_ctx
+        .block_builder_with_mode(&mut db, PostExecMode::Produce)
+        .expect("block builder can be created");
+    produce_ctx
+        .execute_sequencer_transactions(&mut builder, None)
+        .expect("Produce snapshot accepts the embedded 0x7D even with the opt-in off");
+
+    // Opt-in ON, but the snapshot pins Disabled: the embedded 0x7D must be rejected.
+    let disabled_ctx = interop_ctx(false, true, Some(Vec::new()));
+    let provider = StateProviderTest::default();
+    let mut db = State::builder()
+        .with_database(StateProviderDatabase::new(&provider))
+        .with_bundle_update()
+        .build();
+    let mut builder = disabled_ctx
+        .block_builder_with_mode(&mut db, PostExecMode::Disabled)
+        .expect("block builder can be created");
+    let err = disabled_ctx
+        .execute_sequencer_transactions(&mut builder, None)
+        .expect_err("Disabled snapshot rejects the embedded 0x7D even with the opt-in on");
+    assert!(
+        format!("{err:?}").contains("SDM not active"),
+        "expected the disabled-mode post-exec rejection, got: {err:?}",
+    );
+}
+
 #[test]
 fn execution_info_pre_refund_limit_uses_evm_gas_not_canonical_gas() {
     let mut info = ExecutionInfo::new();
@@ -337,6 +437,238 @@ fn execute_best_transactions_committed_txs_preserves_execution() {
     assert_eq!(committed_info.cumulative_gas_used, none_info.cumulative_gas_used);
     assert_eq!(committed_info.cumulative_da_bytes_used, none_info.cumulative_da_bytes_used);
     assert_eq!(committed_info.total_fees, none_info.total_fees);
+}
+
+/// `on_commit(gas)` fires once per committed tx, in commit order, with that tx's canonical and
+/// pre-refund gas — never for a skipped one. Both figures are pinned to the executor's own values
+/// via an oracle re-execution, and an over-gas-limit tx between the committed ones is skipped yet
+/// still yielded, exercising both halves of the contract.
+#[test]
+fn execute_best_transactions_on_commit_hook_execution() {
+    use reth_payload_util::PayloadTransactions;
+    use std::{cell::RefCell, rc::Rc};
+
+    /// The gas an `on_commit` reported, attributed to the most-recently-yielded tx hash — the
+    /// per-inclusion accounting a real consumer would keep.
+    #[derive(Debug, PartialEq, Eq)]
+    struct ReportedGas {
+        gas: CommittedTxGas,
+        tx_hash: TxHash,
+    }
+
+    /// Records the hash of each tx as it is yielded, and on each `on_commit` attributes the
+    /// reported gas to the most-recently-yielded hash.
+    struct TestPayloadTxsImpl {
+        inner: PayloadTransactionsFixed<OpPooledTransaction>,
+        yielded_hashes: Rc<RefCell<Vec<TxHash>>>,
+        committed_txs_gas: Rc<RefCell<Vec<ReportedGas>>>,
+    }
+
+    impl PayloadTransactions for TestPayloadTxsImpl {
+        type Transaction = OpPooledTransaction;
+
+        fn next(&mut self, ctx: ()) -> Option<Self::Transaction> {
+            let tx = self.inner.next(ctx)?;
+            self.yielded_hashes.borrow_mut().push(*tx.hash());
+            Some(tx)
+        }
+
+        fn mark_invalid(&mut self, sender: Address, nonce: u64) {
+            self.inner.mark_invalid(sender, nonce);
+        }
+    }
+
+    impl PayloadTransactionsWithCommitHook for TestPayloadTxsImpl {
+        fn on_commit(&mut self, gas: CommittedTxGas) {
+            let tx_hash = *self.yielded_hashes.borrow().last().expect("on_commit after a next()");
+            self.committed_txs_gas.borrow_mut().push(ReportedGas { gas, tx_hash });
+        }
+    }
+
+    let gas_limit = 10_000_000;
+    let signer = Address::repeat_byte(0x11);
+    let recipient = Address::repeat_byte(0x22);
+    // Distinct calldata gives each committed tx distinct gas to verify.
+    let committed_tx0 = op_pooled_tx_with_input(0, signer, recipient, Bytes::from(vec![0x11; 4]));
+    let committed_tx1 = op_pooled_tx_with_input(1, signer, recipient, Bytes::from(vec![0x22; 400]));
+    let committed_tx2 = op_pooled_tx_with_input(2, signer, recipient, Bytes::from(vec![0x33; 200]));
+    let not_committed_tx = op_pooled_tx_from(signer, base_pooled_tx(3, recipient, gas_limit + 1));
+
+    let committed_order = [committed_tx0.clone(), committed_tx1.clone(), committed_tx2.clone()];
+    let expected_yielded: Vec<TxHash> =
+        [&committed_tx0, &committed_tx1, &not_committed_tx, &committed_tx2]
+            .iter()
+            .map(|tx| *tx.hash())
+            .collect();
+    let txs = vec![committed_tx0, committed_tx1, not_committed_tx, committed_tx2];
+
+    let chain_spec = Arc::new(OpChainSpecBuilder::optimism_mainnet().regolith_activated().build());
+    let ctx = payload_builder_ctx(chain_spec, gas_limit);
+
+    let mut state_provider = StateProviderTest::default();
+    state_provider.insert_account(
+        signer,
+        Account { balance: U256::MAX, ..Default::default() },
+        None,
+        Default::default(),
+    );
+
+    // Re-execute each tx that should be committed so we know the gas passed to on_commit.
+    let expected_committed_gas: Vec<ReportedGas> = {
+        let mut oracle_db = State::builder()
+            .with_database(StateProviderDatabase::new(&state_provider))
+            .with_bundle_update()
+            .build();
+        let mut oracle = ctx.block_builder(&mut oracle_db).expect("oracle block builder");
+        committed_order
+            .iter()
+            .map(|tx| {
+                let mut evm_gas_used = 0;
+                let canonical_gas_used = oracle
+                    .execute_transaction_with_result_closure(
+                        tx.clone().into_consensus(),
+                        |result| evm_gas_used = result.evm_gas_used(),
+                    )
+                    .expect("oracle executes committed tx")
+                    .tx_gas_used();
+                ReportedGas {
+                    tx_hash: *tx.hash(),
+                    gas: CommittedTxGas { canonical_gas_used, evm_gas_used },
+                }
+            })
+            .collect()
+    };
+
+    let mut db = State::builder()
+        .with_database(StateProviderDatabase::new(&state_provider))
+        .with_bundle_update()
+        .build();
+    let mut builder = ctx.block_builder(&mut db).expect("block builder can be created");
+    let mut info = ExecutionInfo::new();
+
+    let yielded_hashes = Rc::new(RefCell::new(Vec::<TxHash>::new()));
+    let committed_txs_gas = Rc::new(RefCell::new(Vec::<ReportedGas>::new()));
+    let best_txs = TestPayloadTxsImpl {
+        inner: PayloadTransactionsFixed::new(txs),
+        yielded_hashes: yielded_hashes.clone(),
+        committed_txs_gas: committed_txs_gas.clone(),
+    };
+
+    ctx.execute_best_transactions(&mut info, &mut builder, best_txs, None, None)
+        .expect("best transactions execute");
+
+    let distinct_gas: std::collections::HashSet<u64> =
+        expected_committed_gas.iter().map(|a| a.gas.canonical_gas_used).collect();
+    assert_eq!(
+        distinct_gas.len(),
+        expected_committed_gas.len(),
+        "committed txs must use distinct gas"
+    );
+
+    assert_eq!(*yielded_hashes.borrow(), expected_yielded, "did not yield all expected txs");
+    assert_eq!(
+        *committed_txs_gas.borrow(),
+        expected_committed_gas,
+        "committed txs and gas do not match expected"
+    );
+}
+
+/// With an SDM refund applied, the two figures `on_commit` reports must actually differ, and each
+/// must match the counter it feeds: `canonical` the receipt-visible total, `evm` the pre-refund
+/// total that block-limit admission is measured against. The plumbing test above cannot catch a
+/// swap of the two fields, because without a refund they are equal.
+#[test]
+fn on_commit_reports_canonical_and_pre_refund_gas_separately_under_sdm_refund() {
+    use reth_payload_util::PayloadTransactions;
+    use std::{cell::RefCell, rc::Rc};
+
+    struct RefundProbe {
+        inner: PayloadTransactionsFixed<OpPooledTransaction>,
+        reported: Rc<RefCell<Vec<CommittedTxGas>>>,
+    }
+
+    impl PayloadTransactions for RefundProbe {
+        type Transaction = OpPooledTransaction;
+
+        fn next(&mut self, ctx: ()) -> Option<Self::Transaction> {
+            self.inner.next(ctx)
+        }
+
+        fn mark_invalid(&mut self, sender: Address, nonce: u64) {
+            self.inner.mark_invalid(sender, nonce);
+        }
+    }
+
+    impl PayloadTransactionsWithCommitHook for RefundProbe {
+        fn on_commit(&mut self, gas: CommittedTxGas) {
+            self.reported.borrow_mut().push(gas);
+        }
+    }
+
+    const REFUND: u64 = 5_000;
+
+    let gas_limit = 10_000_000;
+    let signer = Address::repeat_byte(0x11);
+    let recipient = Address::repeat_byte(0x22);
+    let tx = op_pooled_tx_with_input(0, signer, recipient, Bytes::from(vec![0x11; 64]));
+
+    let chain_spec = Arc::new(OpChainSpecBuilder::optimism_mainnet().lagoon_activated().build());
+    let mut ctx = payload_builder_ctx(chain_spec, gas_limit);
+    // Holocene/Jovian are active under Lagoon; supply the EIP-1559 params and min base fee that
+    // next-env construction requires (zero means "use chain defaults", matching op-node).
+    ctx.config.attributes.eip_1559_params = Some(B64::ZERO);
+    ctx.config.attributes.min_base_fee = Some(0);
+
+    let mut state_provider = StateProviderTest::default();
+    state_provider.insert_account(
+        signer,
+        Account { balance: U256::MAX, ..Default::default() },
+        None,
+        Default::default(),
+    );
+
+    // Verify mode takes the refund straight from an embedded payload keyed by tx index, so a
+    // refund can be injected without the SDM contract state that Produce mode's inspector needs.
+    let post_exec_payload = PostExecPayload {
+        version: POST_EXEC_PAYLOAD_VERSION,
+        block_number: 1,
+        gas_refund_entries: entries(&[(0, REFUND)]),
+    };
+
+    let mut db = State::builder()
+        .with_database(StateProviderDatabase::new(&state_provider))
+        .with_bundle_update()
+        .build();
+    let mut builder = ctx
+        .block_builder_with_mode(&mut db, PostExecMode::Verify(post_exec_payload))
+        .expect("block builder can be created");
+    let mut info = ExecutionInfo::new();
+
+    let reported = Rc::new(RefCell::new(Vec::<CommittedTxGas>::new()));
+    let best_txs =
+        RefundProbe { inner: PayloadTransactionsFixed::new(vec![tx]), reported: reported.clone() };
+
+    ctx.execute_best_transactions(&mut info, &mut builder, best_txs, None, None)
+        .expect("best transactions execute");
+
+    let reported = reported.borrow();
+    let [gas] = reported.as_slice() else {
+        panic!("expected exactly one committed tx, got {reported:?}");
+    };
+
+    assert_eq!(
+        gas.evm_gas_used - gas.canonical_gas_used,
+        REFUND,
+        "the two reported figures must differ by exactly the refund",
+    );
+    assert_eq!(
+        gas.canonical_gas_used, info.cumulative_gas_used,
+        "canonical gas must match the receipt counter",
+    );
+    assert_eq!(
+        gas.evm_gas_used, info.cumulative_evm_gas_used,
+        "evm gas must match the pre-refund counter that admission is gated on",
+    );
 }
 
 #[test]
@@ -599,4 +931,50 @@ fn miner_fee_uses_pool_wrapper_tip() {
     // somebody later tweaks the helper's fee fields and happens to land on `forced_priority_fee`.
     assert_eq!(info.total_fees, expected_fees);
     assert_ne!(info.total_fees, natural_fees);
+}
+
+/// With the failsafe active the builder excludes interop txs but keeps normal txs; with it off the
+/// same interop tx is included — proving the gate is flag-driven, not a blanket exclusion, and does
+/// not depend on the pool's interop-deadline marker. Clearing the flag and rebuilding includes the
+/// interop tx again, proving the exclusion is a per-build decision and the `mark_invalid` it
+/// triggers does not stick across builds.
+#[test]
+fn execute_best_transactions_excludes_interop_txs_when_failsafe_active() {
+    let signer = Address::repeat_byte(0x11);
+    let normal = op_pooled_tx(0, signer, Address::repeat_byte(0x22));
+    let interop = op_interop_pooled_tx(1, signer, Address::repeat_byte(0x33));
+    let normal_hash = *normal.hash();
+    let interop_hash = *interop.hash();
+
+    let gas_limit = 1_000_000;
+    let chain_spec = Arc::new(OpChainSpecBuilder::optimism_mainnet().regolith_activated().build());
+
+    // One shared handle drives every build, mirroring the single failsafe threaded through node
+    // setup; toggling it is what flips the gate, not building a fresh config each time.
+    let failsafe = InteropFailsafe::default();
+    let build = |failsafe: &InteropFailsafe| {
+        let mut ctx = payload_builder_ctx(chain_spec.clone(), gas_limit);
+        ctx.builder_config.interop_failsafe = failsafe.clone();
+        let (_info, included) = run_execute_best_transactions_with_ctx(
+            ctx,
+            signer,
+            vec![normal.clone(), interop.clone()],
+            None,
+            None,
+        );
+        included
+    };
+
+    // Failsafe off: both the normal and the interop tx are included.
+    failsafe.set(false);
+    assert_eq!(build(&failsafe), vec![normal_hash, interop_hash]);
+
+    // Failsafe on: the interop tx is excluded (marked invalid), the normal tx is still included.
+    failsafe.set(true);
+    assert_eq!(build(&failsafe), vec![normal_hash]);
+
+    // Failsafe cleared again: the same interop tx is included once more, confirming the previous
+    // build's `mark_invalid` did not permanently exclude it.
+    failsafe.set(false);
+    assert_eq!(build(&failsafe), vec![normal_hash, interop_hash]);
 }

@@ -25,9 +25,9 @@ import { ISemver } from "interfaces/universal/ISemver.sol";
 import { IStorageSetter } from "interfaces/universal/IStorageSetter.sol";
 import { Claim, Duration } from "src/dispute/lib/LibUDT.sol";
 import { GameTypes } from "src/dispute/lib/Types.sol";
+import { LibGameArgs } from "src/dispute/lib/LibGameArgs.sol";
 import { IAnchorStateRegistry } from "interfaces/dispute/IAnchorStateRegistry.sol";
 import { IDelayedWETH } from "interfaces/dispute/IDelayedWETH.sol";
-import { IZKVerifier } from "interfaces/dispute/zk/IZKVerifier.sol";
 
 /// @title ImplV1_Harness
 /// @notice Implementation contract with version 1.0.0 for testing upgrades.
@@ -147,7 +147,8 @@ contract OPContractsManagerUtils_TestInit is Test, FeatureFlags {
             superFaultDisputeGameImpl: makeAddr("superFaultDisputeGameImpl"),
             superPermissionedDisputeGameImpl: makeAddr("superPermissionedDisputeGameImpl"),
             zkDisputeGameImpl: makeAddr("zkDisputeGameImpl"),
-            storageSetterImpl: address(storageSetter)
+            storageSetterImpl: address(storageSetter),
+            sp1PlonkAdapterImpl: makeAddr("sp1PlonkAdapterImpl")
         });
 
         // Deploy the container and utils.
@@ -936,13 +937,13 @@ contract OPContractsManagerUtils_MakeGameArgs_Test is OPContractsManagerUtils_Te
     function test_makeGameArgs_zkDisputeGame_succeeds() public {
         skipIfDevFeatureDisabled(DevFeatures.ZK_DISPUTE_GAME);
         Claim absolutePrestate = Claim.wrap(bytes32(keccak256("zk prestate")));
-        IZKVerifier verifier = IZKVerifier(address(0xBEEF));
+        address verifier = implementations.sp1PlonkAdapterImpl;
         Duration maxChallengeDuration = Duration.wrap(uint64(7 days));
         Duration maxProveDuration = Duration.wrap(uint64(3 days));
         uint256 challengerBond = 1 ether;
         IAnchorStateRegistry anchorStateRegistry = IAnchorStateRegistry(makeAddr("anchorStateRegistry"));
         IDelayedWETH delayedWETH = IDelayedWETH(payable(makeAddr("delayedWETH")));
-        uint256 l2ChainId = 42;
+        uint256 l2ChainId = 0; // l2chainid is always 0 for super games
 
         IOPContractsManagerUtils.DisputeGameConfig memory cfg = IOPContractsManagerUtils.DisputeGameConfig({
             enabled: true,
@@ -951,7 +952,6 @@ contract OPContractsManagerUtils_MakeGameArgs_Test is OPContractsManagerUtils_Te
             gameArgs: abi.encode(
                 IOPContractsManagerUtils.ZKDisputeGameConfig({
                     absolutePrestate: absolutePrestate,
-                    verifier: verifier,
                     maxChallengeDuration: maxChallengeDuration,
                     maxProveDuration: maxProveDuration,
                     challengerBond: challengerBond
@@ -962,7 +962,9 @@ contract OPContractsManagerUtils_MakeGameArgs_Test is OPContractsManagerUtils_Te
         bytes memory result = utils.makeGameArgs(l2ChainId, anchorStateRegistry, delayedWETH, cfg);
 
         // Verify the CWIA layout: absolutePrestate | verifier | maxChallengeDuration | maxProveDuration |
-        // challengerBond | anchorStateRegistry | delayedWETH | l2ChainId
+        // challengerBond | anchorStateRegistry | delayedWETH
+        // ZK_DISPUTE_GAME is a super game: chain scoping comes from the SuperRootProof preimage
+        // committed to via rootClaim, so no l2ChainId field is included in the encoded args.
         bytes memory expected = abi.encodePacked(
             absolutePrestate,
             verifier,
@@ -970,10 +972,50 @@ contract OPContractsManagerUtils_MakeGameArgs_Test is OPContractsManagerUtils_Te
             maxProveDuration,
             challengerBond,
             address(anchorStateRegistry),
-            address(delayedWETH),
-            l2ChainId
+            address(delayedWETH)
         );
         assertEq(keccak256(result), keccak256(expected), "ZK game args CWIA layout mismatch");
+
+        // Decode the encoded args back through LibGameArgs and assert every field round-trips.
+        LibGameArgs.ZKGameArgs memory decoded = LibGameArgs.decodeZK(result);
+        assertEq(decoded.absolutePrestate, absolutePrestate.raw(), "absolutePrestate mismatch");
+        assertEq(decoded.verifier, verifier, "verifier mismatch");
+        assertEq(decoded.maxChallengeDuration, maxChallengeDuration.raw(), "maxChallengeDuration mismatch");
+        assertEq(decoded.maxProveDuration, maxProveDuration.raw(), "maxProveDuration mismatch");
+        assertEq(decoded.challengerBond, challengerBond, "challengerBond mismatch");
+        assertEq(decoded.anchorStateRegistry, address(anchorStateRegistry), "anchorStateRegistry mismatch");
+        assertEq(decoded.weth, address(delayedWETH), "weth mismatch");
+    }
+
+    /// @notice Tests that trailing ZK configuration words are rejected.
+    function test_makeGameArgs_zkDisputeGameInvalidLength_reverts() public {
+        skipIfDevFeatureDisabled(DevFeatures.ZK_DISPUTE_GAME);
+        IOPContractsManagerUtils.DisputeGameConfig memory cfg = IOPContractsManagerUtils.DisputeGameConfig({
+            enabled: true,
+            initBond: 0,
+            gameType: GameTypes.ZK_DISPUTE_GAME,
+            gameArgs: abi.encode(
+                IOPContractsManagerUtils.ZKDisputeGameConfig({
+                    absolutePrestate: Claim.wrap(bytes32(keccak256("zk prestate"))),
+                    maxChallengeDuration: Duration.wrap(uint64(7 days)),
+                    maxProveDuration: Duration.wrap(uint64(3 days)),
+                    challengerBond: 1 ether
+                }),
+                address(0xBEEF)
+            )
+        });
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IOPContractsManagerUtils.OPContractsManagerUtils_InvalidZKGameArgsLength.selector, uint256(160)
+            )
+        );
+        utils.makeGameArgs(
+            0,
+            IAnchorStateRegistry(makeAddr("anchorStateRegistry")),
+            IDelayedWETH(payable(makeAddr("delayedWETH"))),
+            cfg
+        );
     }
 
     /// @notice Tests that makeGameArgs reverts for an unsupported game type.

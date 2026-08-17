@@ -13,6 +13,7 @@ import (
 
 	messages "github.com/ethereum-optimism/optimism/op-core/interop/messages"
 	"github.com/ethereum-optimism/optimism/op-core/predeploys"
+	optypes "github.com/ethereum-optimism/optimism/op-core/types"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/dsl"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
@@ -25,7 +26,6 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/txintent"
 	"github.com/ethereum-optimism/optimism/op-service/txplan"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 )
@@ -117,8 +117,8 @@ func setupL2s(t devtest.T) (*L2, *L2) {
 	blockTimeA := time.Duration(sys.L2A.Escape().RollupConfig().BlockTime) * time.Second
 	blockTimeB := time.Duration(sys.L2B.Escape().RollupConfig().BlockTime) * time.Second
 
-	l2A := setupL2(t, sys.Wallet, blockTimeA, sys.L2A.Escape().ChainConfig(), sys.L2A.PublicRPC(), sys.FaucetA)
-	l2B := setupL2(t, sys.Wallet, blockTimeB, sys.L2B.Escape().ChainConfig(), sys.L2B.PublicRPC(), sys.FaucetB)
+	l2A := setupL2(t, sys.Wallet, blockTimeA, sys.L2A.Escape().ChainConfig(), sys.L2A.PublicRPC(), sys.FunderA)
+	l2B := setupL2(t, sys.Wallet, blockTimeB, sys.L2B.Escape().ChainConfig(), sys.L2B.PublicRPC(), sys.FunderB)
 
 	var deployWg sync.WaitGroup
 	defer deployWg.Wait()
@@ -136,7 +136,7 @@ func setupL2s(t devtest.T) (*L2, *L2) {
 	return l2A, l2B
 }
 
-func setupL2(t devtest.T, wallet *dsl.HDWallet, blockTime time.Duration, config *params.ChainConfig, el *dsl.L2ELNode, faucet *dsl.Faucet) *L2 {
+func setupL2(t devtest.T, wallet *dsl.HDWallet, blockTime time.Duration, config *params.ChainConfig, el *dsl.L2ELNode, funder *dsl.FunderEOA) *L2 {
 	budgetAmount := eth.OneEther
 	if budgetStr, exists := os.LookupEnv("NAT_INTEROP_LOADTEST_BUDGET"); exists {
 		ethAmt, err := strconv.ParseFloat(budgetStr, 64)
@@ -146,9 +146,9 @@ func setupL2(t devtest.T, wallet *dsl.HDWallet, blockTime time.Duration, config 
 	}
 	const numEOAsPerChain = 1 // TODO(16448): Burst tests exhibit strange behavior with many EOAs.
 	amountPerEOA := budgetAmount.Div(numEOAsPerChain)
-	innerEOAs := dsl.NewFunder(wallet, faucet, el).NewFundedEOAs(numEOAsPerChain, amountPerEOA)
+	innerEOAs := funder.NewFundedEOAs(numEOAsPerChain, amountPerEOA)
 	reliableEL := newReliableEL(el.Escape().EthClient(), blockTime, ResubmitterObserver(el.ChainID()))
-	eoas := make([]*SyncEOA, 0, len(innerEOAs))
+	eoas := make([]*dsl.SyncEOA, 0, len(innerEOAs))
 	budget := accounting.NewBudget(budgetAmount)
 	oracle := setupOracle(t, el, blockTime)
 	for _, eoa := range innerEOAs {
@@ -157,7 +157,7 @@ func setupL2(t devtest.T, wallet *dsl.HDWallet, blockTime time.Duration, config 
 			reliableEL,
 			txinclude.WithBudget(txinclude.NewTxBudget(budget, txinclude.WithOPCostOracle(oracle))),
 		)
-		eoas = append(eoas, NewSyncEOA(p, eoa.Plan()))
+		eoas = append(eoas, dsl.NewSyncEOA(p, eoa.Plan()))
 	}
 	return &L2{
 		Config:    config,
@@ -222,13 +222,13 @@ func newReliableEL(el txinclude.EL, blockTime time.Duration, observer txinclude.
 }
 
 // initMsgFromReceipt turns the first log in the receipt into an inititiating message.
-func initMsgFromReceipt(t devtest.T, l2 *L2, receipt *ethtypes.Receipt) (*messages.Message, error) {
+func initMsgFromReceipt(t devtest.T, l2 *L2, receipt *optypes.Receipt) (*messages.Message, error) {
 	ref, err := l2.EL.Escape().EthClient().BlockRefByHash(t.Ctx(), receipt.BlockHash)
 	if err != nil {
 		return nil, fmt.Errorf("get init msg block ref by hash: %w", err)
 	}
 	out := new(txintent.InteropOutput)
-	if err := out.FromReceipt(t.Ctx(), receipt, ref, l2.EL.ChainID()); err != nil {
+	if err := out.FromReceipt(t.Ctx(), &receipt.Receipt, ref, l2.EL.ChainID()); err != nil {
 		return nil, fmt.Errorf("get init msg from receipt: %w", err)
 	}
 	t.Require().NotEmpty(out.Entries)
