@@ -37,7 +37,19 @@ pub async fn launch_node(
     reth_optimism_firehose::init_blockchain(builder.config().chain.chain_id());
 
     if !args.proofs_history {
-        let handle = builder.node(OpNode::new(args)).launch_with_debug_capabilities().await?;
+        let handle = builder
+            .node(OpNode::new(args))
+            // Genesis emission must wait until the DB is initialized (the genesis block is
+            // written during launch), hence `on_node_started` rather than alongside
+            // `init_blockchain` above.
+            .on_node_started(|node| {
+                reth_optimism_firehose::emit_genesis_block_if_empty(
+                    &node.provider,
+                    node.chain_spec().as_ref(),
+                )
+            })
+            .launch_with_debug_capabilities()
+            .await?;
         return handle.node_exit_future.await;
     }
 
@@ -84,6 +96,10 @@ where
     let handle = builder
         .node(OpNode::new(args))
         .on_node_started(move |node| {
+            reth_optimism_firehose::emit_genesis_block_if_empty(
+                &node.provider,
+                node.chain_spec().as_ref(),
+            )?;
             spawn_proofs_db_metrics(
                 node.task_executor,
                 mdbx,

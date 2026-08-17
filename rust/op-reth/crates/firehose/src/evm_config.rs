@@ -309,13 +309,6 @@ where
         let mut tracer =
             FirehoseBlockTracer::start::<Self::Primitives>(block.sealed_block(), finalized);
 
-        // The builder always extends an existing parent, so block 1 never reaches here; guard
-        // anyway since the wrapped executor would panic on the genesis marker.
-        if tracer.is_genesis() {
-            tracer.mark_verified();
-            return Ok(());
-        }
-
         match OpChainHooks.execute_one_traced(&self.inner, state, block, &mut tracer) {
             Ok(_) => {
                 tracer.mark_verified();
