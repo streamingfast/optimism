@@ -26,6 +26,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The Dockerfile regenerates superchain-configs.zip from the
+      # superchain-registry submodule copied into the build context.
+      - name: Init superchain-registry submodule
+        run: git submodule update --init superchain-registry
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
