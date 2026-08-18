@@ -21,7 +21,7 @@ pub use engine_validator::{OpFirehoseEngineValidator, OpFirehoseEngineValidatorB
 /// This MUST run once, after [`reth_firehose::init_tracer`], and before any block is traced.
 /// Without it the tracer's `chain_config` stays `None` and the first traced block panics in
 /// `firehose_tracer`'s `ensure_blockchain_init` ("the OnBlockchainInit hook should have been
-/// called at this point") — the genesis marker hits this immediately on the engine-API path.
+/// called at this point").
 ///
 /// The SF reth fork performs the equivalent call inside its Firehose ExEx (`reth_firehose::run_exex`).
 /// `op-reth` delivers live tracing through [`OpFirehoseEngineValidator`] instead of that ExEx, so
@@ -39,4 +39,30 @@ pub fn init_blockchain(chain_id: u64) {
             firehose_tracer::config::ChainConfig::new(chain_id),
         );
     }
+}
+
+/// Emits the Firehose genesis block when the node starts on an empty chain (head still at the
+/// chain-spec genesis height).
+///
+/// The genesis block is written to the DB during launch initialization without ever being
+/// executed, so no tracing hook fires for it and a from-scratch Firehose stream would start one
+/// block after genesis. The SF reth fork performs this emission inside its Firehose ExEx, which
+/// `op-reth` does not use — wire this from `on_node_started` instead (the genesis block only
+/// exists in the DB once launch has initialized it, so it cannot run alongside
+/// [`init_blockchain`]).
+///
+/// No-op when the tracer is not initialized, so non-Firehose embeddings (tests, tooling) are safe.
+pub fn emit_genesis_block_if_empty<P, C>(provider: &P, chain_spec: &C) -> eyre::Result<()>
+where
+    P: reth_provider::BlockReader,
+    <P::Block as reth_primitives_traits::Block>::Header:
+        alloy_consensus::BlockHeader + alloy_primitives::Sealable,
+    <<P::Block as reth_primitives_traits::Block>::Body as reth_primitives_traits::BlockBody>::OmmerHeader:
+        alloy_consensus::BlockHeader + alloy_primitives::Sealable,
+    C: reth_chainspec::EthChainSpec,
+{
+    if !reth_firehose::is_tracer_initialized() {
+        return Ok(());
+    }
+    reth_firehose::emit_genesis_block_on_empty_chain(provider, chain_spec.genesis())
 }
