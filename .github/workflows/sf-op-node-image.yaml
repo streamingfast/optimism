@@ -1,12 +1,20 @@
 name: sf-op-node-image
 
-# StreamingFast-specific: builds only the op-node image from this branch and
-# pushes it to ghcr.io/streamingfast/op-node. Not part of upstream CI.
+# StreamingFast-specific: builds only the op-node image and pushes it to
+# ghcr.io/streamingfast/op-node. Not part of upstream CI.
+#
+# Releases are cut from git tags `sf-op-node-v*` (no slash before the v:
+# a slashed tag like op-node/v1.2.3-sf would also match the inherited
+# upstream workflows' `*/v*` tag trigger). The docker tag is the git tag
+# minus the `sf-op-node-` prefix. Branch pushes to sf/op-node-* still
+# build, but only publish the commit-sha docker tag.
 
 on:
   push:
     branches:
       - "sf/op-node-*"
+    tags:
+      - "sf-op-node-v*"
   workflow_dispatch:
 
 concurrency:
@@ -46,8 +54,17 @@ jobs:
         run: |
           echo "git_commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "git_date=$(git show -s --format=%ct HEAD)" >> "$GITHUB_OUTPUT"
-          # sf/op-node-v1.19.4-pruned-l1 -> v1.19.4-pruned-l1
-          echo "version=$(echo "${GITHUB_REF_NAME}" | sed 's|^sf/op-node-||; s|/|-|g')" >> "$GITHUB_OUTPUT"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            # sf-op-node-v1.19.4-pruned-l1 -> v1.19.4-pruned-l1
+            version="${GITHUB_REF_NAME#sf-op-node-}"
+          else
+            # Branch build: no human-readable docker tag, sha only.
+            version=""
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          tags="${IMAGE}:${GITHUB_SHA}"
+          [[ -n "$version" ]] && tags="${tags},${IMAGE}:${version}"
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push op-node image
         uses: docker/build-push-action@v6
@@ -60,7 +77,5 @@ jobs:
           build-args: |
             GIT_COMMIT=${{ steps.vars.outputs.git_commit }}
             GIT_DATE=${{ steps.vars.outputs.git_date }}
-            OP_NODE_VERSION=${{ steps.vars.outputs.version }}
-          tags: |
-            ${{ env.IMAGE }}:${{ steps.vars.outputs.version }}
-            ${{ env.IMAGE }}:${{ github.sha }}
+            OP_NODE_VERSION=${{ steps.vars.outputs.version || github.sha }}
+          tags: ${{ steps.vars.outputs.tags }}
