@@ -6,13 +6,14 @@ name: sf-op-node-image
 # Releases are cut from git tags `sf-op-node-v*` (no slash before the v:
 # a slashed tag like op-node/v1.2.3-sf would also match the inherited
 # upstream workflows' `*/v*` tag trigger). The docker tag is the git tag
-# minus the `sf-op-node-` prefix. Branch pushes to sf/op-node-* still
-# build, but only publish the commit-sha docker tag.
+# minus the `sf-op-node-` prefix. Tags are cut from the release/op-node-*
+# branch. Branch pushes still build, but only publish the commit-sha
+# docker tag.
 
 on:
   push:
     branches:
-      - "sf/op-node-*"
+      - "release/op-node-*"
     tags:
       - "sf-op-node-v*"
   workflow_dispatch:
