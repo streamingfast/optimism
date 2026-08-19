@@ -13524,8 +13524,6 @@ dependencies = [
  "reth-tasks",
  "reth-trie",
  "reth-trie-db",
- "reth-trie-parallel",
- "revm-primitives",
  "tokio",
  "tracing",
 ]

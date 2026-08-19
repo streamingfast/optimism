@@ -56,9 +56,28 @@ compiling against the new reth: 29 errors.
        the new `op-version` crate; `sf-release.yml` supplies them.
 6. [x] `cargo +nightly-2026-02-20 fmt --all` (also picked up pre-existing
        fmt drift in `firehose/src/{extras,lib}.rs`).
-7. [ ] `cargo check --all-targets` / tests / clippy — see Test report.
-8. [ ] Battlefield `op-reth-devnet` suite.
-9. [ ] `CHANGELOG.sf.md` + tag name.
+7. [x] `cargo check --all-targets` on `reth-optimism-firehose`, `reth-optimism-node`,
+       `reth-optimism-payload-builder`, `reth-optimism-cli`, `op-reth` — clean.
+8. [x] `cargo test -p reth-optimism-firehose -p reth-optimism-payload-builder
+       -p reth-optimism-txpool` — 87 passed, 0 failed.
+9. [x] `cargo clippy --all-targets` on the same crates — no errors. Dropped the two
+       dependencies the adaptation made unused; the remaining warnings (doc backticks
+       in `extras.rs` / `lib.rs`) pre-date this merge.
+10. [x] Battlefield `op-reth-devnet` — **80 passing, 0 failing, 5 pending**, and
+       `compare-blocks-rpc` blocks 0-250 all identical.
+11. [x] `CHANGELOG.sf.md` — release named `v2.4.2-fh3.1`.
+
+## Battlefield gotchas (cost ~15 min this run)
+
+- `scripts/compare-blocks.sh` hardcodes `http://localhost:8545`, which in the **optimism**
+  devnet is the **L1** RPC — it diffs L2 Firehose blocks against L1, prints garbage, then
+  panics inside `fireeth`'s own `blockfetcher.fetchBlockReceipts`. Run the underlying
+  command against the L2 op-reth RPC instead:
+  `fireeth tools compare-blocks-rpc --plaintext localhost:8089 http://localhost:28545 0 <head-200>`
+- The firehose gRPC endpoint on `:8089` does not open until the info server can read
+  `first_streamable_block`, which needs the **first merged 100-block bundle**. The merger
+  only bundles once LIB passes 100, and LIB tracks L1 finality — so expect ~10 minutes of
+  `ConnectError: [unavailable]` after launch before the suite can run. Not a regression.
 
 ## Upstream API changes that hit the Firehose crate
 

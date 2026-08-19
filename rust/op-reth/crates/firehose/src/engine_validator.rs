@@ -264,7 +264,12 @@ where
     metrics: EngineApiMetrics,
     /// Validator for the payload.
     validator: V,
-    /// Changeset cache for in-memory trie changesets
+    /// Changeset cache for in-memory trie changesets.
+    ///
+    /// Carried so this clone keeps the same construction signature as upstream's validator, but
+    /// unread since v2.4.2 made `ChangesetCache::register_pending` private — the deferred trie
+    /// task no longer registers a pending entry from here.
+    #[expect(dead_code, reason = "kept for parity with upstream's validator construction")]
     changeset_cache: ChangesetCache,
     /// Task runtime for spawning parallel work.
     runtime: reth_tasks::Runtime,

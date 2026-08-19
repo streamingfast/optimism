@@ -35,6 +35,8 @@ against the battlefield-ethereum `op-reth-devnet` suite.
   (`executor.evm_mut().db_mut().set_state_hook(..)`, alloy-evm #366).
 - `crates/firehose/src/evm_config.rs`: `ConfigurePostExecEvm` gained an associated `Snapshot` type;
   `OpFirehoseEvmConfig` delegates it to the inner config.
+- `crates/firehose/Cargo.toml`: dropped the now-unused `reth-trie-parallel` and `revm-primitives`
+  dependencies (the state-root fallback no longer uses `ParallelStateRoot`).
 - `Dockerfile.sf`: cargo-chef base moved to `rust-1.95` to match the workspace `rust-version`, apt
   fetches now retry (`Acquire::Retries=8`), and the builder stage receives `GIT_VERSION` /
   `GIT_COMMIT` / `GIT_DATE`, which upstream's new `op-version` crate reads to stamp
