@@ -11,8 +11,8 @@ most recent release at the top.
 
 ## v2.4.2-fh3.1
 
-Bumps the SF op-reth fork to upstream `op-reth/v2.4.2` (upstream `v2.4.1` is
-subsumed).
+Bumps the SF op-reth fork to upstream `op-reth/v2.4.2`. Upstream `v2.4.1` is an
+ancestor of `v2.4.2`, so this one merge brings in its commits too.
 
 ### Changed
 

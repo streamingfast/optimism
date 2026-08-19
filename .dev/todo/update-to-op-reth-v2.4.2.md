@@ -5,7 +5,8 @@
 **Release branch:** `release/2.x`
 **Bump branch:** `bump/op-reth-v2.4.2`
 **Last merged upstream:** `op-reth/v2.4.0` (fork tags `v2.4.0-fh3.1`, `-fh3.1-1`)
-**Target upstream:** `op-reth/v2.4.2` (v2.4.1 is subsumed — 389 commits)
+**Target upstream:** `op-reth/v2.4.2` — 389 commits. `v2.4.1` is an ancestor of `v2.4.2`,
+so merging `v2.4.2` brings in its commits too; there is no separate `v2.4.1` merge.
 **Rust workspace:** `rust/` (op-reth crates under `rust/op-reth/crates/`)
 
 ## Reth bump — REQUIRED (already available)

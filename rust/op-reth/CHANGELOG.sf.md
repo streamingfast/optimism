@@ -6,8 +6,9 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 
 ## v2.4.2-fh3.1
 
-Bumps the SF op-reth fork to upstream `op-reth/v2.4.2` (upstream `v2.4.1` is subsumed; 389
-upstream commits). Validated against the battlefield-ethereum `op-reth-devnet` suite.
+Bumps the SF op-reth fork to upstream `op-reth/v2.4.2` — 389 upstream commits. Upstream
+`v2.4.1` is an ancestor of `v2.4.2`, so this one merge brings in its commits too. Validated
+against the battlefield-ethereum `op-reth-devnet` suite.
 
 ### Changed
 
