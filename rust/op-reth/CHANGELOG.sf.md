@@ -4,6 +4,41 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 `paradigmxyz/reth` (via the SF `streamingfast/reth` fork) and on top of
 `ethereum-optimism/optimism`'s `op-reth` tree.
 
+## v2.4.2-fh3.1
+
+Bumps the SF op-reth fork to upstream `op-reth/v2.4.2` (upstream `v2.4.1` is subsumed; 389
+upstream commits). Validated against the battlefield-ethereum `op-reth-devnet` suite.
+
+### Changed
+
+- Reth pin moved from `streamingfast/reth` tag `v2.3.0-fh-8` to **`op-rs-aef8d3e-fh-1`**. Upstream
+  repointed its reth dependency twice in this range — `paradigmxyz/reth` tag `v2.3.0` (v2.4.0) ->
+  rev `f2eecc65` (v2.4.1) -> `op-rs/reth` rev `aef8d3ef92117f91455e16969f0adf5bf7c6e9e1` (v2.4.2) —
+  and the published `reth-*` crates moved 0.4.1 -> 0.5.0. `op-rs-aef8d3e-fh-1` is the Firehose
+  rebase of that final rev (branch `firehose/op-reth-2.4.x-fh`), so it already carries the
+  genesis-block-on-empty-chain emission.
+- `[patch.crates-io]` `alloy-evm` bumped to `streamingfast/evm` tag `v0.37.0-sf` (upstream moved
+  `alloy-evm` 0.36 -> 0.37). Upstream's lock resolves `alloy-evm 0.37.1`, at which point cargo
+  silently reports `patch ... was not used in the crate graph` and op-reth links stock `alloy-evm`
+  — which routes no block-level system call (EIP-4788, EIP-2935, OP withdrawals) through the revm
+  inspector, so every block trace loses its `systemCalls`. The lock pins `alloy-evm` to `0.37.0`.
+  **Watch for that warning on every future bump.**
+- `crates/firehose/src/engine_validator.rs` adapted to the v2.4.2 payload-validator API. Upstream
+  replaced the validator's inline multiproof / state-root-task machinery with a pluggable
+  `state_root_strategy` framework whose context constructors are `pub(crate)` and therefore
+  unusable from this external crate; `ParallelStateRoot` was removed as well (folded into the
+  now-private sparse-trie job). The Firehose validator falls back to synchronous state-root
+  computation. This is a state-root *algorithm* choice only — no tracer event is emitted, dropped
+  or reordered because of it. Also threads the new `state_trie_overlays` parameter through the
+  validator builder, and moves the state hook from the executor to the revm `State`
+  (`executor.evm_mut().db_mut().set_state_hook(..)`, alloy-evm #366).
+- `crates/firehose/src/evm_config.rs`: `ConfigurePostExecEvm` gained an associated `Snapshot` type;
+  `OpFirehoseEvmConfig` delegates it to the inner config.
+- `Dockerfile.sf`: cargo-chef base moved to `rust-1.95` to match the workspace `rust-version`, apt
+  fetches now retry (`Acquire::Retries=8`), and the builder stage receives `GIT_VERSION` /
+  `GIT_COMMIT` / `GIT_DATE`, which upstream's new `op-version` crate reads to stamp
+  `op-reth --version`. `sf-release.yml` supplies them from the pushed tag and commit.
+
 ## v2.4.0-fh3.1-1
 
 ### Fixed

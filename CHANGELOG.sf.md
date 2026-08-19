@@ -9,6 +9,30 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## v2.4.2-fh3.1
+
+Bumps the SF op-reth fork to upstream `op-reth/v2.4.2` (upstream `v2.4.1` is
+subsumed).
+
+### Changed
+
+- Reth pin moved from `streamingfast/reth` tag `v2.3.0-fh-8` to
+  **`op-rs-aef8d3e-fh-1`**, the Firehose rebase of the `op-rs/reth` rev
+  (`aef8d3ef`) that upstream `op-reth/v2.4.2` pins.
+- `[patch.crates-io]` `alloy-evm` moved to `streamingfast/evm` tag `v0.37.0-sf`
+  (upstream moved `alloy-evm` 0.36 -> 0.37). The lock pins `alloy-evm` to
+  `0.37.0` so the patch actually applies — at `0.37.1` cargo silently drops it
+  and the block traces lose all `systemCalls`.
+- Firehose engine validator adapted to the new reth payload-validator API: the
+  inline multiproof / state-root-task machinery was replaced upstream by a
+  `state_root_strategy` framework whose constructors are `pub(crate)`, so the
+  validator now computes state roots synchronously. This changes only the
+  state-root algorithm; no Firehose event is added, dropped or altered.
+- `Dockerfile.sf`: cargo-chef base moved to `rust-1.95` (the workspace
+  `rust-version` moved to 1.95), apt fetches retry, and the builder stage now
+  receives `GIT_VERSION` / `GIT_COMMIT` / `GIT_DATE` so the new upstream
+  `op-version` crate can stamp `op-reth --version`.
+
 ## v2.4.0-fh3.1
 
 Bumps the SF op-reth fork to upstream `op-reth/v2.4.0`.
