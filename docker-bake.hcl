@@ -307,6 +307,9 @@ target "kona-node" {
     REPO_LOCATION = "local"
     BIN_TARGET = "kona-node"
     BUILD_PROFILE = "release"
+    GIT_VERSION = "${GIT_VERSION}"
+    GIT_COMMIT = "${GIT_COMMIT}"
+    GIT_DATE = "${GIT_DATE}"
   }
   platforms = split(",", PLATFORMS)
   tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/kona-node:${tag}"]
@@ -342,6 +345,23 @@ target "kona-client" {
   tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/kona-client:${tag}"]
 }
 
+target "kona-sp1-proposer" {
+  dockerfile = "kona/docker/apps/kona_app_generic.dockerfile"
+  context = "rust"
+  contexts = {
+    nuts-bundles = "op-core/nuts/bundles"
+    contracts-bedrock-abis = "packages/contracts-bedrock/snapshots/abi"
+  }
+  args = {
+    REPO_LOCATION = "local"
+    BUILDER_VARIANT = "contract-abis"
+    BIN_TARGET = "kona-sp1-proposer"
+    BUILD_PROFILE = "release"
+  }
+  platforms = split(",", PLATFORMS)
+  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/kona-sp1-proposer:${tag}"]
+}
+
 target "op-reth" {
   dockerfile = "op-reth/DockerfileOp"
   context = "rust"
@@ -353,7 +373,9 @@ target "op-reth" {
   }
   args = {
     BUILD_PROFILE = "maxperf"
-    FEATURES = ""
+    GIT_VERSION = "${GIT_VERSION}"
+    GIT_COMMIT = "${GIT_COMMIT}"
+    GIT_DATE = "${GIT_DATE}"
   }
   platforms = split(",", PLATFORMS)
   tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/op-reth:${tag}"]

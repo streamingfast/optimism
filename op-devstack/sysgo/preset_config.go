@@ -1,6 +1,7 @@
 package sysgo
 
 import (
+	"fmt"
 	"time"
 
 	gameTypes "github.com/ethereum-optimism/optimism/op-challenger/game/types"
@@ -10,6 +11,29 @@ import (
 
 type PreGenesisSuperGameConfig struct {
 	ClaimedOutputs []eth.Bytes32
+}
+
+// ZKDisputeGameConfig configures the shared ZK dispute game installed after
+// the interop migration. OPCM injects the release-owned SP1 adapter.
+type ZKDisputeGameConfig struct {
+	MaxChallengeDuration time.Duration
+	MaxProveDuration     time.Duration
+}
+
+func (c ZKDisputeGameConfig) validate() error {
+	if c.MaxChallengeDuration <= 0 {
+		return fmt.Errorf("ZK maximum challenge duration must be positive")
+	}
+	if c.MaxChallengeDuration%time.Second != 0 {
+		return fmt.Errorf("ZK maximum challenge duration must use whole seconds")
+	}
+	if c.MaxProveDuration <= 0 {
+		return fmt.Errorf("ZK maximum prove duration must be positive")
+	}
+	if c.MaxProveDuration%time.Second != 0 {
+		return fmt.Errorf("ZK maximum prove duration must use whole seconds")
+	}
+	return nil
 }
 
 // PresetConfig captures preset constructor mutations.
@@ -36,8 +60,12 @@ type PresetConfig struct {
 	// initiating-message logs backward from the tip by this duration at startup.
 	InteropLogBackfillDepth time.Duration
 	PreGenesisSuperGame     *PreGenesisSuperGameConfig
-	// SkipHonestProposer skips starting op-proposer.
+	ZKDisputeGame           *ZKDisputeGameConfig
+	ZKProposerOptions       []ZKProposerOption
+	// SkipHonestProposer skips starting the honest proposer (op-proposer, or kona-sp1-proposer for the ZK preset).
 	SkipHonestProposer bool
+	// SkipHonestChallenger skips starting the honest challenger.
+	SkipHonestChallenger bool
 	// SupernodeVerifierSyncMode overrides the supernode VN's sync mode when set.
 	SupernodeVerifierSyncMode *nodeSync.Mode
 	// InteropActivationDelaySeconds offsets Interop activation past genesis (0 = at genesis).

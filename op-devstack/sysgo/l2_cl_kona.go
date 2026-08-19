@@ -2,15 +2,11 @@ package sysgo
 
 import (
 	"context"
-	"fmt"
-	"net/url"
-	"strings"
 	"sync"
 
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/logpipe"
-	"github.com/ethereum-optimism/optimism/op-service/tasks"
 	"github.com/ethereum-optimism/optimism/op-service/testutils/tcpproxy"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -33,8 +29,6 @@ type KonaNode struct {
 	p devtest.T
 
 	sub *SubProcess
-
-	l2MetricsRegistrar L2MetricsRegistrar
 }
 
 func (k *KonaNode) Start() {
@@ -60,24 +54,10 @@ func (k *KonaNode) Start() {
 	logOut := logpipe.ToLoggerWithMinLevel(k.p.Logger().New("component", "kona-node", "src", "stdout"), log.LevelWarn)
 	logErr := logpipe.ToLoggerWithMinLevel(k.p.Logger().New("component", "kona-node", "src", "stderr"), log.LevelWarn)
 	userRPCChan := make(chan string, 1)
-	defer close(userRPCChan)
-
-	metricsTargetChan := make(chan PrometheusMetricsTarget, 1)
-	defer close(metricsTargetChan)
 
 	onLogEntry := func(e logpipe.LogEntry) {
-		msg := e.LogMessage()
-		if msg == "RPC server bound to address" {
+		if e.LogMessage() == "RPC server bound to address" {
 			userRPCChan <- "http://" + e.FieldValue("addr").(string)
-		} else if metricsUrl, found := strings.CutPrefix(msg, "Serving metrics at: "); found {
-			// Matching messages like "Serving metrics at: http://0.0.0.0:9091"
-			if !strings.HasPrefix(metricsUrl, "http") {
-				metricsUrl = fmt.Sprintf("http://%s", metricsUrl)
-			}
-			parsedUrl, err := url.Parse(metricsUrl)
-			k.p.Require().NoError(err, "invalid metrics url output to logs", "log", msg)
-			k.p.Require().NotEmpty(parsedUrl.Port(), "empty port in logged metrics url", "log", msg)
-			metricsTargetChan <- NewPrometheusMetricsTarget(parsedUrl.Hostname(), parsedUrl.Port(), false)
 		}
 	}
 	stdOutLogs := logpipe.LogCallback(func(line []byte) {
@@ -111,12 +91,6 @@ func (k *KonaNode) Start() {
 		k.p.Require().NoError(k.p.Ctx().Err(), "need user RPC")
 	}
 
-	if areMetricsEnabled() {
-		var metricsTarget PrometheusMetricsTarget
-		k.p.Require().NoError(tasks.Await(k.p.Ctx(), metricsTargetChan, &metricsTarget), "need metrics endpoint")
-		k.l2MetricsRegistrar.RegisterL2MetricsTargets(k.name, metricsTarget)
-	}
-
 	k.userProxy.SetUpstream(ProxyAddr(k.p.Require(), userRPCAddr))
 }
 
@@ -129,6 +103,7 @@ func (k *KonaNode) Stop() {
 		k.p.Logger().Warn("kona-node already stopped")
 		return
 	}
+	k.clearProxyUpstreams()
 	err := k.sub.Stop(true)
 	k.p.Require().NoError(err, "Must stop")
 	k.sub = nil
@@ -144,11 +119,19 @@ func (k *KonaNode) StopControlled(ctx context.Context) error {
 	if k.sub == nil {
 		return nil
 	}
+	k.clearProxyUpstreams()
 	if err := k.sub.StopControlled(ctx, controlledInterruptWait, controlledKillWait); err != nil {
 		return err
 	}
 	k.sub = nil
 	return nil
+}
+
+// Callers must hold k.mu.
+func (k *KonaNode) clearProxyUpstreams() {
+	if k.userProxy != nil {
+		k.userProxy.ClearUpstream()
+	}
 }
 
 func (k *KonaNode) Running() bool {

@@ -386,7 +386,7 @@ where
             config,
             cached_reads: Default::default(),
             execution_cache: None,
-            trie_handle: None,
+            state_root_handle: None,
             cancel: Default::default(),
             best_payload: None,
         };
@@ -407,8 +407,14 @@ fn convert_build_args<N: OpPayloadPrimitives>(
     BuildArguments<OpPayloadBuilderAttributes<N::SignedTx>, OpBuiltPayload<N>>,
     PayloadBuilderError,
 > {
-    let BuildArguments { config, cached_reads, execution_cache, trie_handle, cancel, best_payload } =
-        args;
+    let BuildArguments {
+        config,
+        cached_reads,
+        execution_cache,
+        state_root_handle,
+        cancel,
+        best_payload,
+    } = args;
     let parent_hash = config.parent_header.hash();
     let payload_id = config.payload_id;
     let builder_attrs =
@@ -423,7 +429,7 @@ fn convert_build_args<N: OpPayloadPrimitives>(
         },
         cached_reads,
         execution_cache,
-        trie_handle,
+        state_root_handle,
         cancel,
         best_payload,
     })
@@ -488,7 +494,11 @@ impl<Txs> OpBuilder<'_, Txs> {
         // scalar.
         db.load_cache_account(L1_BLOCK_CONTRACT).map_err(BlockExecutionError::other)?;
 
-        // Snapshot the runtime-mutable mode so EVM setup and `0x7D` appending agree.
+        // Snapshot the post-exec mode once for the whole build. The opt-in flag behind
+        // `sdm_production_enabled` is mutable at runtime (admin RPC); reading it again when
+        // deciding whether to append the `0x7D` below could disagree with the mode the EVM
+        // was built in, yielding a block whose refunded state has no matching post-exec tx
+        // (or vice versa).
         let post_exec_mode = ctx.post_exec_mode()?;
         let produce_post_exec = matches!(post_exec_mode, PostExecMode::Produce);
 
@@ -526,7 +536,9 @@ impl<Txs> OpBuilder<'_, Txs> {
             }
         }
 
-        // Only `Produce` appends `0x7D`; derived blocks verify any embedded tx instead.
+        // Only `Produce` mode appends a post-exec tx, and only locally-sequenced blocks reach it; a
+        // derived block (force_empty) is `Verify`/`Disabled` and already carries its own `0x7D`, so
+        // appending would duplicate it. See `post_exec_mode`.
         let sdm_refund_gas = if produce_post_exec {
             let block_number = builder.evm_mut().block().number().saturating_to();
             let entries = builder.executor_mut().take_post_exec_entries();
@@ -561,6 +573,7 @@ impl<Txs> OpBuilder<'_, Txs> {
             execution_output: Arc::new(execution_outcome),
             hashed_state: Arc::new(hashed_state),
             trie_updates: Arc::new(trie_updates),
+            changed_paths: None,
         };
 
         let no_tx_pool = ctx.attributes().no_tx_pool();
@@ -623,6 +636,23 @@ impl<Txs> OpBuilder<'_, Txs> {
     }
 }
 
+/// The gas a committed transaction used, in both of the senses a block builder needs.
+///
+/// Both are reported because which one is correct depends on the question being asked:
+/// [`Self::evm_gas_used`] for anything comparing against the block gas limit, since that is
+/// what [`ExecutionInfo::is_tx_over_limits`] measures, and [`Self::canonical_gas_used`] for
+/// anything accounting in receipt-visible terms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommittedTxGas {
+    /// Receipt-visible gas after post-exec (SDM) settlement — the block header's `gasUsed`
+    /// and the basis for what the sender pays.
+    pub canonical_gas_used: u64,
+    /// Gas the EVM burned before post-exec (SDM) settlement — the real compute performed.
+    /// Settlement only rebates today, so this is `>= canonical_gas_used`; refunds return gas
+    /// but not build time, which is why block-limit admission is gated on this figure.
+    pub evm_gas_used: u64,
+}
+
 /// A [`PayloadTransactions`] iterator that is notified of the gas used by each
 /// yielded transaction once it is actually committed to the block.
 ///
@@ -640,9 +670,12 @@ pub trait PayloadTransactionsWithCommitHook: PayloadTransactions {
     /// after it is successfully executed and committed to the block, and BEFORE any
     /// subsequent `next()` call, with the gas that transaction used. It is NOT invoked
     /// for transactions that are skipped or rejected — whether or not `mark_invalid`
-    /// was called for them. Implementors may therefore attribute `gas_used` to the
+    /// was called for them. Implementors may therefore attribute the gas to the
     /// most-recently-yielded transaction.
-    fn on_commit(&mut self, gas_used: u64);
+    ///
+    /// The two figures in [`CommittedTxGas`] are not interchangeable; see its docs for
+    /// which one a given use calls for.
+    fn on_commit(&mut self, gas: CommittedTxGas);
 }
 
 /// Adapts a plain [`PayloadTransactions`] to [`PayloadTransactionsWithCommitHook`] by ignoring
@@ -664,7 +697,7 @@ impl<T: PayloadTransactions> PayloadTransactions for RethPayloadTransactions<T> 
 }
 
 impl<T: PayloadTransactions> PayloadTransactionsWithCommitHook for RethPayloadTransactions<T> {
-    fn on_commit(&mut self, _gas_used: u64) {}
+    fn on_commit(&mut self, _gas: CommittedTxGas) {}
 }
 
 /// A type that returns a the [`PayloadTransactions`] that should be included in the pool.
@@ -859,7 +892,7 @@ where
             &self.chain_spec,
             self.attributes().timestamp(),
         );
-        protocol_active && self.builder_config.sdm_post_exec_opt_in.enabled()
+        protocol_active && self.builder_config.operator_sdm_opt_in.enabled()
     }
 
     /// Returns true when the tx pool is excluded and the block must be reproduced
@@ -920,8 +953,12 @@ where
         is_better_payload(self.best_payload.as_ref(), total_fees)
     }
 
-    /// Prepares a [`BlockBuilder`] using this payload's current post-exec mode.
-    /// Use [`Self::block_builder_with_mode`] when the caller already snapped the mode.
+    /// Prepares a [`BlockBuilder`] for the next block, resolving the post-exec mode from this
+    /// payload's context.
+    ///
+    /// Callers that also decide whether to append the trailing `0x7D` must instead resolve
+    /// [`Self::post_exec_mode`] once and pass it to [`Self::block_builder_with_mode`], so a
+    /// concurrent opt-in toggle cannot change the mode between EVM construction and the append.
     pub fn block_builder<'a, DB: Database>(
         &'a self,
         db: &'a mut State<DB>,
@@ -935,7 +972,8 @@ where
         self.block_builder_with_mode(db, self.post_exec_mode()?)
     }
 
-    /// Prepares a [`BlockBuilder`] with a caller-supplied post-exec mode.
+    /// Like [`Self::block_builder`] but builds against a caller-supplied [`PostExecMode`], so a
+    /// single snapshot drives both EVM construction and any later post-exec decision.
     pub fn block_builder_with_mode<'a, DB: Database>(
         &'a self,
         db: &'a mut State<DB>,
@@ -1181,7 +1219,7 @@ where
             // Report the gas used by each committed transaction so a custom
             // `best_txs` can update its own per-inclusion state. `RethPayloadTransactions`
             // makes this a no-op for a plain `PayloadTransactions`.
-            best_txs.on_commit(tx_gas_used);
+            best_txs.on_commit(CommittedTxGas { canonical_gas_used: tx_gas_used, evm_gas_used });
 
             // Record the successfully committed transaction for callers that want per-call
             // visibility.

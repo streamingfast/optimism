@@ -23,13 +23,13 @@
 # Declared before the first FROM so it is usable in the runtime stage's FROM.
 ARG FIREHOSE_ETHEREUM="latest"
 
-FROM lukemathwalker/cargo-chef:latest-rust-1.94 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.95 AS chef
 WORKDIR /app
 
 LABEL org.opencontainers.image.source=https://github.com/streamingfast/op-reth
 LABEL org.opencontainers.image.licenses="MIT OR Apache-2.0"
 
-RUN apt-get update && apt-get -y upgrade && apt-get install -y libclang-dev pkg-config
+RUN apt-get -o Acquire::Retries=8 update && apt-get -o Acquire::Retries=8 -y upgrade && apt-get -o Acquire::Retries=8 install -y libclang-dev pkg-config
 RUN cargo install cargo-auditable
 
 # Builds a cargo-chef plan
@@ -58,6 +58,16 @@ ARG VERSION="dev"
 # version conflicts with alloy 1.8.  All other dependencies are still cached.
 # The real build below uses the workspace [patch.crates-io] sources.
 RUN cargo chef cook --profile $BUILD_PROFILE --features "$FEATURES" --recipe-path recipe.json --manifest-path /app/op-reth/bin/Cargo.toml || true
+
+# Declared after `cargo chef cook` so that a new commit invalidates only the app
+# build layer, not the cached dependency build. Consumed by the `op-version`
+# crate (upstream #22030), which stamps `op-reth --version`.
+ARG GIT_VERSION=""
+ENV GIT_VERSION=$GIT_VERSION
+ARG GIT_COMMIT=""
+ENV GIT_COMMIT=$GIT_COMMIT
+ARG GIT_DATE=""
+ENV GIT_DATE=$GIT_DATE
 
 COPY . .
 

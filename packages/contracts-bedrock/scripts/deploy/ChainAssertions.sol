@@ -14,8 +14,7 @@ import { DeployUtils } from "scripts/libraries/DeployUtils.sol";
 import { Constants } from "src/libraries/Constants.sol";
 import { Types } from "scripts/libraries/Types.sol";
 import { Blueprint } from "src/libraries/Blueprint.sol";
-import { GameType, GameTypes } from "src/dispute/lib/Types.sol";
-import { Hash } from "src/dispute/lib/Types.sol";
+import { GameType, Proposal } from "src/dispute/lib/Types.sol";
 // Interfaces
 import { IOPContractsManagerV2 } from "interfaces/L1/opcm/IOPContractsManagerV2.sol";
 import { IOPContractsManagerContainer } from "interfaces/L1/opcm/IOPContractsManagerContainer.sol";
@@ -35,7 +34,6 @@ import { IETHLockbox } from "interfaces/L1/IETHLockbox.sol";
 import { IProxyAdminOwnedBase } from "interfaces/universal/IProxyAdminOwnedBase.sol";
 import { IAnchorStateRegistry } from "interfaces/dispute/IAnchorStateRegistry.sol";
 import { IOPContractsManagerV2 } from "interfaces/L1/opcm/IOPContractsManagerV2.sol";
-import { IOPContractsManagerUtils } from "interfaces/L1/opcm/IOPContractsManagerUtils.sol";
 import { IZKDisputeGame } from "interfaces/dispute/zk/IZKDisputeGame.sol";
 
 library ChainAssertions {
@@ -80,7 +78,6 @@ library ChainAssertions {
         require(resourceConfig.maximumBaseFee == 0, "CHECK-SCFG-350");
         // Check _addresses
         require(config.startBlock() == type(uint256).max, "CHECK-SCFG-360");
-        require(config.batchInbox() == address(0), "CHECK-SCFG-370");
         require(config.l1CrossDomainMessenger() == address(0), "CHECK-SCFG-380");
         require(config.l1ERC721Bridge() == address(0), "CHECK-SCFG-390");
         require(config.l1StandardBridge() == address(0), "CHECK-SCFG-400");
@@ -111,12 +108,6 @@ library ChainAssertions {
         require(config.scalar() >> 248 == 1, "CHECK-SCFG-70");
         // Depends on start block being set to 0 in `initialize`
         require(config.startBlock() == block.number, "CHECK-SCFG-140");
-        require(
-            config.batchInbox()
-                == IOPContractsManagerUtils(IOPContractsManagerV2(address(_doi.opcm)).opcmUtils())
-                    .chainIdToBatchInboxAddress(_doi.l2ChainId),
-            "CHECK-SCFG-150"
-        );
         // Check _addresses
         require(config.l1CrossDomainMessenger() == _contracts.L1CrossDomainMessenger, "CHECK-SCFG-160");
         require(config.l1ERC721Bridge() == _contracts.L1ERC721Bridge, "CHECK-SCFG-170");
@@ -402,7 +393,14 @@ library ChainAssertions {
         );
     }
 
-    function checkAnchorStateRegistryProxy(IAnchorStateRegistry _anchorStateRegistryProxy, bool _isProxy) internal {
+    function checkAnchorStateRegistryProxy(
+        IAnchorStateRegistry _anchorStateRegistryProxy,
+        bool _isProxy,
+        GameType _expectedRespectedGameType,
+        Proposal memory _expectedAnchor
+    )
+        internal
+    {
         DeployUtils.assertValidContractAddress(address(_anchorStateRegistryProxy));
         if (_isProxy) {
             DeployUtils.assertERC1967ImplementationSet(address(_anchorStateRegistryProxy));
@@ -416,15 +414,11 @@ library ChainAssertions {
         });
 
         // The below check cannot be done in the standard validator because the assertion only applies at deploy time.
-        (Hash actualRoot,) = _anchorStateRegistryProxy.anchors(GameTypes.PERMISSIONED_CANNON);
-        if (_isProxy) {
-            require(
-                Hash.unwrap(actualRoot) == 0xdead000000000000000000000000000000000000000000000000000000000000,
-                "ANCHORP-40"
-            );
-        } else {
-            require(Hash.unwrap(actualRoot) == bytes32(0), "ANCHORP-40");
-        }
+        Proposal memory actualAnchor = _anchorStateRegistryProxy.getStartingAnchorRoot();
+
+        require(_anchorStateRegistryProxy.respectedGameType().raw() == _expectedRespectedGameType.raw(), "ANCHORP-30");
+        require(actualAnchor.root.raw() == _expectedAnchor.root.raw(), "ANCHORP-40");
+        require(actualAnchor.l2SequenceNumber == _expectedAnchor.l2SequenceNumber, "ANCHORP-50");
     }
 
     /// @notice Asserts that the ZKDisputeGame implementation is setup correctly.
