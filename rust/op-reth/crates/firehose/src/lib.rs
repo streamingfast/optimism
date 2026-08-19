@@ -23,12 +23,12 @@ pub use engine_validator::{OpFirehoseEngineValidator, OpFirehoseEngineValidatorB
 /// `firehose_tracer`'s `ensure_blockchain_init` ("the OnBlockchainInit hook should have been
 /// called at this point").
 ///
-/// The SF reth fork performs the equivalent call inside its Firehose ExEx (`reth_firehose::run_exex`).
-/// `op-reth` delivers live tracing through [`OpFirehoseEngineValidator`] instead of that ExEx, so
-/// the call has to be wired in explicitly here (see `proof_history::launch_node`). Mirrors the
-/// fork's `ChainConfig::new(chain_id)` — fork activation is derived per-block from the header, so no
-/// fork timestamps are needed. Reports the client as `"reth"` to match what the fork emits and what
-/// the Firehose reader expects.
+/// The SF reth fork performs the equivalent call inside its Firehose ExEx
+/// (`reth_firehose::run_exex`). `op-reth` delivers live tracing through
+/// [`OpFirehoseEngineValidator`] instead of that ExEx, so the call has to be wired in explicitly
+/// here (see `proof_history::launch_node`). Mirrors the fork's `ChainConfig::new(chain_id)` — fork
+/// activation is derived per-block from the header, so no fork timestamps are needed. Reports the
+/// client as `"reth"` to match what the fork emits and what the Firehose reader expects.
 ///
 /// No-op when the tracer is not initialized, so non-Firehose embeddings (tests, tooling) are safe.
 pub fn init_blockchain(chain_id: u64) {

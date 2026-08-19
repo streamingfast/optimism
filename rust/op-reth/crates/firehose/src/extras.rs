@@ -6,28 +6,28 @@
 //!
 //! * [`OpPostTxExtras`] — re-emits the three OP fee-vault balance changes that
 //!   `OpHandler::reward_beneficiary` applies via `Journal::balance_incr` during revm's
-//!   `post_execution` phase. Revm fires no inspector hooks in that phase, so without
-//!   this the BaseFeeVault / L1FeeVault / OperatorFeeVault credits would be invisible to
-//!   the tracer.
+//!   `post_execution` phase. Revm fires no inspector hooks in that phase, so without this the
+//!   BaseFeeVault / L1FeeVault / OperatorFeeVault credits would be invisible to the tracer.
 //!
-//! * [`OpPreTxAdjust`] — patches the per-tx [`firehose_tracer::types::TxEvent`] before
-//!   it reaches the tracer. OP deposit transaction envelopes carry no nonce field
-//!   (`TxDeposit::nonce` returns a literal `0`); the effective nonce is the sender
-//!   account's pre-execution nonce, which this hook reads from the DB and writes into
-//!   the event. The hook also reclassifies the depth-0 sender balance change as
-//!   `IncreaseMint` (reason 18) instead of the default `GasBuy` (reason 7) used by the
-//!   generic inspector path.
+//! * [`OpPreTxAdjust`] — patches the per-tx [`firehose_tracer::types::TxEvent`] before it reaches
+//!   the tracer. OP deposit transaction envelopes carry no nonce field (`TxDeposit::nonce` returns
+//!   a literal `0`); the effective nonce is the sender account's pre-execution nonce, which this
+//!   hook reads from the DB and writes into the event. The hook also reclassifies the depth-0
+//!   sender balance change as `IncreaseMint` (reason 18) instead of the default `GasBuy` (reason 7)
+//!   used by the generic inspector path.
 
 use alloy_evm::Evm as _;
 use alloy_op_evm::OpEvm;
 use alloy_primitives::{Address, Bytes, U256, address};
-use firehose_tracer::pb::sf::ethereum::r#type::v2::balance_change::Reason;
-use firehose_tracer::types::{TxEvent, TxType};
-use op_revm::transaction::OpTxTr;
-use op_revm::transaction::deposit::DEPOSIT_TRANSACTION_TYPE;
-use op_revm::OpSpecId;
-use reth_firehose::inspector::FirehoseInspectorApi;
-use reth_firehose::{PostTxExtras, PreTxAdjust};
+use firehose_tracer::{
+    pb::sf::ethereum::r#type::v2::balance_change::Reason,
+    types::{TxEvent, TxType},
+};
+use op_revm::{
+    OpSpecId,
+    transaction::{OpTxTr, deposit::DEPOSIT_TRANSACTION_TYPE},
+};
+use reth_firehose::{PostTxExtras, PreTxAdjust, inspector::FirehoseInspectorApi};
 use reth_revm::revm::{
     context_interface::ContextTr,
     handler::PrecompileProvider,
@@ -57,12 +57,7 @@ where
     Tx: alloy_evm::IntoTxEnv<Tx>
         + Into<op_revm::transaction::OpTransaction<reth_revm::revm::context::TxEnv>>,
 {
-    fn emit_post_tx_extras(
-        &self,
-        evm: &mut OpEvm<DB, I, P, Tx>,
-        gas_used: u64,
-        base_fee: u64,
-    ) {
+    fn emit_post_tx_extras(&self, evm: &mut OpEvm<DB, I, P, Tx>, gas_used: u64, base_fee: u64) {
         // Deposit txs return early in `OpHandler::reward_beneficiary` without crediting any
         // vault — skip them here so we do not emit phantom entries.
         let (enveloped, spec): (Bytes, OpSpecId) = {
@@ -100,8 +95,7 @@ where
             l1.clear_tx_l1_cost();
             (l1_cost, operator_fee_cost)
         };
-        let base_fee_amount =
-            U256::from(base_fee as u128).saturating_mul(U256::from(gas_used));
+        let base_fee_amount = U256::from(base_fee as u128).saturating_mul(U256::from(gas_used));
 
         // Emission order matches the geth-instrumented op-node: BaseFeeVault (0x...19) →
         // L1FeeVault (0x...1A) → OperatorFeeVault (0x...1B). Note this differs from
@@ -131,9 +125,7 @@ where
             }
             let old = inspector.post_tx_balance_erased(vault, &mut get_pre);
             let new = old.saturating_add(amount);
-            inspector
-                .tracer_mut()
-                .on_balance_change(vault, old, new, Reason::RewardTransactionFee);
+            inspector.tracer_mut().on_balance_change(vault, old, new, Reason::RewardTransactionFee);
         }
     }
 }

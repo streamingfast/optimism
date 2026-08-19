@@ -73,12 +73,9 @@ where
         db: &mut reth_revm::State<DB>,
         block: &RecoveredBlock<<F::Primitives as NodePrimitives>::Block>,
         tracer: &mut FirehoseBlockTracer,
-    ) -> Result<
-        BlockExecutionResult<<F::Primitives as NodePrimitives>::Receipt>,
-        BlockExecutionError,
-    > {
-        let evm_env =
-            evm_config.evm_env(block.header()).map_err(BlockExecutionError::other)?;
+    ) -> Result<BlockExecutionResult<<F::Primitives as NodePrimitives>::Receipt>, BlockExecutionError>
+    {
+        let evm_env = evm_config.evm_env(block.header()).map_err(BlockExecutionError::other)?;
         let exec_ctx = evm_config
             .context_for_block(block.sealed_block())
             .map_err(BlockExecutionError::other)?;
@@ -88,12 +85,8 @@ where
         let inner = evm_config.create_executor(evm, exec_ctx);
 
         let withdrawals = block.body().withdrawals().cloned();
-        let wrapped = FirehoseWrappedExecutor::with_hooks(
-            inner,
-            withdrawals,
-            OpPreTxAdjust,
-            OpPostTxExtras,
-        );
+        let wrapped =
+            FirehoseWrappedExecutor::with_hooks(inner, withdrawals, OpPreTxAdjust, OpPostTxExtras);
 
         wrapped.execute_block(block.transactions_recovered())
     }
@@ -205,10 +198,7 @@ where
         BlockHeader + Sealable,
     TxTy<F::Primitives>: Transaction + TxHashRef + SignatureFields,
 {
-    fn evm_env_for_payload(
-        &self,
-        payload: &ExecutionData,
-    ) -> Result<EvmEnvFor<Self>, Self::Error> {
+    fn evm_env_for_payload(&self, payload: &ExecutionData) -> Result<EvmEnvFor<Self>, Self::Error> {
         self.inner.evm_env_for_payload(payload)
     }
 
@@ -248,6 +238,8 @@ where
         BlockHeader + Sealable,
     TxTy<F::Primitives>: Transaction + TxHashRef + SignatureFields,
 {
+    type Snapshot = F::Snapshot;
+
     fn post_exec_executor_for_block<'a, DB: Database>(
         &'a self,
         db: &'a mut State<DB>,
@@ -257,7 +249,7 @@ where
         impl BlockExecutor<
             Transaction = <Self::Primitives as NodePrimitives>::SignedTx,
             Receipt = <Self::Primitives as NodePrimitives>::Receipt,
-        > + PostExecExecutorExt
+        > + PostExecExecutorExt<Snapshot = Self::Snapshot>
         + 'a,
         Self::Error,
     > {
@@ -273,7 +265,7 @@ where
     ) -> Result<
         impl BlockBuilder<
             Primitives = Self::Primitives,
-            Executor: PostExecExecutorExt
+            Executor: PostExecExecutorExt<Snapshot = Self::Snapshot>
                           + BlockExecutor<
                 Evm: alloy_evm::Evm<DB: core::ops::DerefMut<Target = State<DB>>>,
                 Result: PreRefundGasUsed,
