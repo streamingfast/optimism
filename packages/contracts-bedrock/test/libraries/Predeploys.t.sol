@@ -71,7 +71,7 @@ abstract contract Predeploys_TestInit is CommonTest {
             return false;
         }
         if (_r.isInterop) {
-            return _isInterop && uint256(_fork) >= uint256(Fork.INTEROP);
+            return _isInterop && uint256(_fork) >= uint256(Fork.LAGOON);
         }
         if (_r.isCustomGasToken) return _isCustomGasToken;
         return true;
@@ -200,13 +200,6 @@ contract Predeploys_Uncategorized_Test is Predeploys_TestInit {
         skipIfSysFeatureDisabled(Features.CUSTOM_GAS_TOKEN);
         _test_predeploys(Fork.ISTHMUS, true, false);
     }
-
-    /// @notice Tests that the predeploy addresses are set correctly. They have code
-    ///         and the proxied accounts have the correct admin. Using l2cm.
-    function test_predeploys_l2cm_succeeds() external {
-        skipIfDevFeatureDisabled(DevFeatures.L2CM);
-        _test_predeploys(Fork.ISTHMUS, false, false);
-    }
 }
 
 /// @title Predeploys_GetAllRecords_Test
@@ -260,13 +253,13 @@ contract Predeploys_UncategorizedInterop_Test is Predeploys_TestInit {
     /// @notice Tests that the predeploy addresses are set correctly. They have code and the
     ///         proxied accounts have the correct admin. Using interop.
     function test_predeploys_succeeds() external {
-        _test_predeploys(Fork.INTEROP, false, true);
+        _test_predeploys(Fork.LAGOON, false, true);
     }
 
     /// @notice Tests that the predeploy addresses are set correctly. They have code and the
     ///         proxied accounts have the correct admin. Using interop with custom gas token.
     function test_predeploys_customGasToken_succeeds() external {
         skipIfSysFeatureDisabled(Features.CUSTOM_GAS_TOKEN);
-        _test_predeploys(Fork.INTEROP, true, true);
+        _test_predeploys(Fork.LAGOON, true, true);
     }
 }

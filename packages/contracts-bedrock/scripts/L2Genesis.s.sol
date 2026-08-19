@@ -195,7 +195,7 @@ contract L2Genesis is Script {
             return;
         }
 
-        if (forkEquals(_fork, Fork.INTEROP)) {
+        if (forkEquals(_fork, Fork.LAGOON)) {
             return;
         }
     }
@@ -294,12 +294,10 @@ contract L2Genesis is Script {
         vm.resetNonce(_input.opChainProxyAdminOwner);
         // These calls don't need the opChainProxyAdminOwner prank: setConditionalDeployer uses
         // vm.etch and setL2DevFeatureFlags manages its own prank as DEPOSITOR_ACCOUNT.
-        if (DevFeatures.isDevFeatureEnabled(_input.devFeatureBitmap, DevFeatures.L2CM)) {
-            setConditionalDeployer(); // 2C
-            setL2DevFeatureFlags(_input); // 2D
-            // deploy() upgrades ConditionalDeployer and L2DevFeatureFlags, so it must run after both are set.
-            _deployPredeploysViaL2CM(_input);
-        }
+        setConditionalDeployer(); // 2C
+        setL2DevFeatureFlags(_input); // 2D
+        // deploy() upgrades ConditionalDeployer and L2DevFeatureFlags, so it must run after both are set.
+        _deployPredeploysViaL2CM(_input);
     }
 
     /// @notice Builds the implementation records for the temporary L2ContractsManager.
@@ -409,7 +407,7 @@ contract L2Genesis is Script {
 
     /// @notice Returns true when interop should be active in the genesis state.
     function _isGenesisInteropEnabled(Input memory _input) internal pure returns (bool) {
-        return _input.fork >= uint256(Fork.INTEROP) && _input.useInterop
+        return _input.fork >= uint256(Fork.LAGOON) && _input.useInterop
             && DevFeatures.isDevFeatureEnabled(_input.devFeatureBitmap, DevFeatures.OPTIMISM_PORTAL_INTEROP);
     }
 
@@ -492,7 +490,7 @@ contract L2Genesis is Script {
             _setImplementationCode(Predeploys.L1_BLOCK_ATTRIBUTES);
         }
         // Only set the runtime INTEROP feature flag at genesis if the chain is being born at or
-        // beyond the Interop fork.
+        // beyond the Lagoon fork.
         if (_isGenesisInteropEnabled(_input)) {
             IL1Block(Predeploys.L1_BLOCK_ATTRIBUTES).setFeature(Features.INTEROP);
         }
@@ -664,13 +662,13 @@ contract L2Genesis is Script {
 
     /// @notice This predeploy is following the safety invariant #1.
     function setConditionalDeployer() internal {
-        Predeploys.assertGates(Predeploys.CONDITIONAL_DEPLOYER, DevFeatures.L2CM, false, false);
+        Predeploys.assertGates(Predeploys.CONDITIONAL_DEPLOYER, bytes32(0), false, false);
         _setImplementationCode(Predeploys.CONDITIONAL_DEPLOYER);
     }
 
     /// @notice Sets up the L2DevFeatureFlags predeploy with the development feature bitmap.
     function setL2DevFeatureFlags(Input memory _input) internal {
-        Predeploys.assertGates(Predeploys.L2_DEV_FEATURE_FLAGS, DevFeatures.L2CM, false, false);
+        Predeploys.assertGates(Predeploys.L2_DEV_FEATURE_FLAGS, bytes32(0), false, false);
         _setImplementationCode(Predeploys.L2_DEV_FEATURE_FLAGS);
         vm.prank(Constants.DEPOSITOR_ACCOUNT);
         IL2DevFeatureFlags(Predeploys.L2_DEV_FEATURE_FLAGS).setDevFeatureBitmap(_input.devFeatureBitmap);
