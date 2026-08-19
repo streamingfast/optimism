@@ -46,6 +46,7 @@ type ImplementationsContracts struct {
 	PermissionedDisputeGameImpl      common.Address
 	ZkDisputeGameImpl                common.Address
 	StorageSetterImpl                common.Address
+	SP1PlonkAdapterImpl              common.Address
 	SuperFaultDisputeGameImpl        common.Address
 	SuperPermissionedDisputeGameImpl common.Address
 }
@@ -81,6 +82,8 @@ type OpChainFaultProofsContracts struct {
 	FaultDisputeGameImpl               common.Address
 	FaultDisputeGameCannonKonaImpl     common.Address
 	PermissionedDisputeGameImpl        common.Address
+	SuperFaultDisputeGameImpl          common.Address
+	SuperPermissionedDisputeGameImpl   common.Address
 	DelayedWethPermissionedGameProxy   common.Address
 	DelayedWethPermissionlessGameProxy common.Address
 }

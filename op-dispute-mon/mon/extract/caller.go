@@ -24,14 +24,33 @@ type GameCallerMetrics interface {
 }
 
 type GameCaller interface {
-	GetWithdrawals(context.Context, rpcblock.Block, ...common.Address) ([]*contracts.WithdrawalRequest, error)
-	GetExtendedMetadata(context.Context, rpcblock.Block) (contracts.GameMetadata, error)
-	GetAllClaims(context.Context, rpcblock.Block) ([]faultTypes.Claim, error)
 	GetAnchorStateRegistry(context.Context, rpcblock.Block) (common.Address, error)
+}
+
+// MetadataCaller exposes metadata shared by fault and SuperPermissioned games.
+type MetadataCaller interface {
+	GetExtendedMetadata(context.Context, rpcblock.Block) (contracts.GameMetadata, error)
+}
+
+// BondGameCaller exposes reads shared by every bond-bearing game.
+type BondGameCaller interface {
+	GetWithdrawals(context.Context, rpcblock.Block, ...common.Address) ([]*contracts.WithdrawalRequest, error)
 	BondCaller
 	BalanceCaller
+}
+
+// FaultGameCaller exposes reads used only to enrich fault games.
+type FaultGameCaller interface {
+	GameCaller
+	MetadataCaller
+	GetAllClaims(context.Context, rpcblock.Block) ([]faultTypes.Claim, error)
+	BondGameCaller
 	ClaimCaller
 }
+
+var _ FaultGameCaller = (contracts.FaultDisputeGameContract)(nil)
+var _ BondGameCaller = (contracts.FaultDisputeGameContract)(nil)
+var _ MetadataCaller = (*contracts.SuperPermissionedDisputeGameContract)(nil)
 
 type GameCallerCreator struct {
 	m      GameCallerMetrics
@@ -53,7 +72,7 @@ func (g *GameCallerCreator) CreateContract(ctx context.Context, game gameTypes.G
 	}
 	switch gameTypes.GameType(game.GameType) {
 	case gameTypes.SuperPermissionedGameType:
-		fdg := NewSuperPermissionedGameCaller(g.m, game.Proxy, g.caller)
+		fdg := contracts.NewSuperPermissionedDisputeGameContract(g.m, game.Proxy, g.caller)
 		g.cache.Add(game.Proxy, fdg)
 		return fdg, nil
 	case gameTypes.CannonGameType,

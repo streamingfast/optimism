@@ -42,7 +42,6 @@ reth-node-builder.workspace = true
 reth-tasks.workspace = true
 reth-trie.workspace = true
 reth-trie-db.workspace = true
-reth-trie-parallel.workspace = true
 
 # firehose tracer (crates.io)
 firehose-tracer.workspace = true
@@ -68,9 +67,6 @@ op-alloy-consensus = { workspace = true, features = ["firehose"] }
 
 # op-revm
 op-revm.workspace = true
-
-# revm
-revm-primitives.workspace = true
 
 # misc — used by the cloned engine validator
 crossbeam-channel.workspace = true

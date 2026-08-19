@@ -9,12 +9,13 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-chain-ops/devkeys"
 	gameTypes "github.com/ethereum-optimism/optimism/op-challenger/game/types"
-	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/artifacts"
+	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/opcm"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/upgrade/embedded"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	sharedchallenger "github.com/ethereum-optimism/optimism/op-devstack/shared/challenger"
 	op_service "github.com/ethereum-optimism/optimism/op-service"
+	"github.com/ethereum-optimism/optimism/op-service/bigs"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/ioutil"
 	"github.com/ethereum-optimism/optimism/op-service/retry"
@@ -74,7 +75,7 @@ func setRespectedGameTypeForRuntime(
 		txplan.WithAgainstLatestBlockEthClient(client),
 		txplan.WithEstimator(client, true),
 		txplan.WithRetrySubmission(client, 5, retry.Exponential()),
-		txplan.WithRetryInclusion(client, 5, retry.Exponential()))
+		txplan.WithRetryInclusion(txplan.FromGethReceipts(client), 5, retry.Exponential()))
 
 	asrBindings := bindings.NewBindings[bindings.AnchorStateRegistry](bindings.WithTo(asrAddr), bindings.WithTest(t))
 	rcpt, err := contractio.Write(asrBindings.SetRespectedGameType(uint32(gameType)), t.Ctx(), txOpts)
@@ -91,6 +92,7 @@ func addGameTypesForRuntime(
 	l1ChainID eth.ChainID,
 	l1ELRPC string,
 	l2Net *L2Network,
+	l2CL L2CLNode,
 ) {
 	require := t.Require()
 	require.NotNil(l2Net, "l2 network must exist")
@@ -104,7 +106,8 @@ func addGameTypesForRuntime(
 
 	l1PAO, l1PAOKey := resolveL1ProxyAdminOwner(t, keys, l1ChainID)
 
-	chainOps := devkeys.ChainOperatorKeys(l1ChainID.ToBig())
+	// Operator roles are scoped to the OP chain, even though the game contracts use them on L1.
+	chainOps := devkeys.ChainOperatorKeys(l2Net.ChainID().ToBig())
 	proposer, err := keys.Address(chainOps(devkeys.ProposerRole))
 	require.NoError(err, "failed to get proposer address")
 	challenger, err := keys.Address(chainOps(devkeys.ChallengerRole))
@@ -117,41 +120,47 @@ func addGameTypesForRuntime(
 	initBond := eth.GWei(80_000_000).ToBig() // 0.08 ETH
 
 	cannonKonaPrestate := PrestateForGameType(t, gameTypes.CannonKonaGameType)
+	superCannonKonaPrestate := PrestateForGameType(t, gameTypes.SuperCannonKonaGameType)
+	dummyCannonPrestate := common.HexToHash(sharedchallenger.DummyPermissionedPrestate)
+	startingAnchorRoot := opcm.DefaultStartingAnchorRoot
+	if enabled[gameTypes.SuperCannonKonaGameType] {
+		superrootTime := awaitSuperrootTime(t, l2CL)
+		startingAnchorRoot = opcm.StartingAnchorRoot{
+			Root:          common.Hash(getSuperRoot(t, l2CL.UserRPC(), superrootTime)),
+			L2BlockNumber: new(big.Int).SetUint64(superrootTime),
+		}
+	}
+	extraInstructions := []embedded.ExtraInstruction{
+		{
+			Key: "overrides.cfg.startingAnchorRoot",
+			Data: encodeStartingAnchorRoot(
+				t,
+				eth.Bytes32(startingAnchorRoot.Root),
+				bigs.Uint64Strict(startingAnchorRoot.L2BlockNumber),
+			),
+		},
+		{
+			Key:  "overrides.cfg.startingRespectedGameType",
+			Data: encodeStartingRespectedGameType(t, superPermissionedGameType),
+		},
+	}
 
-	// Download the contracts artifacts once; reused for the mock verifier deploy and the upgrade.
+	// Download the contracts artifacts for the upgrade.
 	artifactsFS, err := artifacts.Download(t.Ctx(), LocalArtifacts(t), ioutil.NoopProgressor(), t.TempDir())
 	require.NoError(err, "failed to download artifacts")
 
 	var zkDisputeGameConfig *embedded.ZKDisputeGameConfig
 	if enabled[gameTypes.ZKDisputeGameType] {
-		// Deploy the no-op ZKMockVerifier so the verifier address has code (ZKDG-80). DEV ONLY;
-		// op-deployer owns the deploy. ZK proofs are never verified in devstack.
-		mockVerifier, mErr := deployer.DeployZKMockVerifier(t.Ctx(), client, l1PAOKey, artifactsFS)
-		require.NoError(mErr, "failed to deploy ZKMockVerifier")
-		zkDisputeGameConfig = ZKDisputeGameConfigForRuntime(t, mockVerifier)
+		zkDisputeGameConfig = ZKDisputeGameConfigForRuntime()
 	}
 
-	// dummyCannonPrestate is used for the PermissionedCannon game type now that the legacy
-	// fault-proof program is no longer wired into devstack. Permissioned games skip prestate
-	// validation and are never executed by the challenger, so the prestate is never resolved at
-	// claim time.
-	dummyCannonPrestate := common.HexToHash(sharedchallenger.DummyPermissionedPrestate)
-
-	// OPCMv2 requires all 6 game configs in order:
-	// CANNON, PERMISSIONED_CANNON, CANNON_KONA, SUPER_PERMISSIONED, SUPER_CANNON_KONA, ZK_DISPUTE_GAME.
-	// The CANNON (legacy) game type is permanently disabled, but its config slot must remain present
-	// and in order for the OPCMv2 upgrade.
+	// OPCMv2 requires all 6 game configs in order. Keep the legacy Cannon Kona
+	// slot available for pre-Isthmus hard-fork tests while using super-root games
+	// for post-migration configurations.
 	configs := []embedded.DisputeGameConfig{
+		{Enabled: false, InitBond: new(big.Int), GameType: embedded.GameTypeCannon},
 		{
-			Enabled:  false,
-			InitBond: initBond,
-			GameType: embedded.GameTypeCannon,
-			FaultDisputeGameConfig: &embedded.FaultDisputeGameConfig{
-				AbsolutePrestate: dummyCannonPrestate,
-			},
-		},
-		{
-			Enabled:  true, // Permissioned cannon is always enabled.
+			Enabled:  enabled[gameTypes.PermissionedGameType],
 			InitBond: initBond,
 			GameType: embedded.GameTypePermissionedCannon,
 			PermissionedDisputeGameConfig: &embedded.PermissionedDisputeGameConfig{
@@ -168,8 +177,22 @@ func addGameTypesForRuntime(
 				AbsolutePrestate: cannonKonaPrestate,
 			},
 		},
-		{Enabled: false, InitBond: new(big.Int), GameType: embedded.GameTypeSuperPermissioned},
-		{Enabled: false, InitBond: new(big.Int), GameType: embedded.GameTypeSuperCannonKona},
+		{
+			Enabled:  true,
+			InitBond: new(big.Int),
+			GameType: embedded.GameTypeSuperPermissioned,
+			SuperPermissionedDisputeGameConfig: &embedded.SuperPermissionedDisputeGameConfig{
+				Proposer: proposer,
+			},
+		},
+		{
+			Enabled:  enabled[gameTypes.SuperCannonKonaGameType],
+			InitBond: initBond,
+			GameType: embedded.GameTypeSuperCannonKona,
+			FaultDisputeGameConfig: &embedded.FaultDisputeGameConfig{
+				AbsolutePrestate: superCannonKonaPrestate,
+			},
+		},
 		{
 			Enabled:             enabled[gameTypes.ZKDisputeGameType],
 			InitBond:            initBond,
@@ -190,22 +213,18 @@ func addGameTypesForRuntime(
 		UpgradeInputV2: &embedded.UpgradeInputV2{
 			SystemConfig:       l2Net.deployment.SystemConfigProxyAddr(),
 			DisputeGameConfigs: configs,
-			ExtraInstructions: []embedded.ExtraInstruction{
-				{Key: "PermittedProxyDeployment", Data: []byte("DelayedWETH")},
-			},
+			ExtraInstructions:  extraInstructions,
 		},
 	})
 }
 
 // ZKDisputeGameConfigForRuntime returns a ZKDisputeGameConfig for use in devstack/test environments.
-// verifier must be a deployed contract address (code.length > 0); use deployMockZKVerifier for devstack.
 // AbsolutePrestate is a fixed dummy hash — ZK proofs are never verified in devstack.
-func ZKDisputeGameConfigForRuntime(t devtest.CommonT, verifier common.Address) *embedded.ZKDisputeGameConfig {
+func ZKDisputeGameConfigForRuntime() *embedded.ZKDisputeGameConfig {
 	return &embedded.ZKDisputeGameConfig{
 		AbsolutePrestate:     common.Hash{0x01}, // dummy for devstack, not validated at claim time
-		Verifier:             verifier,
-		MaxChallengeDuration: 604800, // 7 days
-		MaxProveDuration:     259200, // 3 days
+		MaxChallengeDuration: 604800,            // 7 days
+		MaxProveDuration:     259200,            // 3 days
 		ChallengerBond:       eth.GWei(80_000_000).ToBig(),
 	}
 }
@@ -214,6 +233,8 @@ func PrestateForGameType(t devtest.CommonT, gameType gameTypes.GameType) common.
 	switch gameType {
 	case gameTypes.CannonKonaGameType:
 		return getCannonKonaAbsolutePrestate(t)
+	case gameTypes.SuperCannonKonaGameType:
+		return getAbsolutePrestate(t, "rust/kona/prestate-artifacts-cannon-interop/prestate-proof.json")
 	default:
 		t.Require().Fail("no prestate available for game type", gameType)
 		return common.Hash{}

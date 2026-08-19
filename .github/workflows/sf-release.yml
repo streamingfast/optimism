@@ -84,6 +84,8 @@ jobs:
           # sanitization by replacing `/` with `-`.
           version=${version//\//-}
           echo "VERSION=${version}" >> "$GITHUB_OUTPUT"
+          # Commit timestamp, matching the root justfile's `GIT_DATE`.
+          echo "GIT_DATE=$(git show -s --format='%ct')" >> "$GITHUB_OUTPUT"
 
       - name: Generate docker tags/labels from github build context
         id: meta
@@ -131,6 +133,10 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             VERSION=${{ steps.extract-version.outputs.VERSION }}
+            # Consumed by the `op-version` crate, which stamps `op-reth --version`.
+            GIT_VERSION=${{ steps.extract-version.outputs.VERSION }}
+            GIT_COMMIT=${{ github.sha }}
+            GIT_DATE=${{ steps.extract-version.outputs.GIT_DATE }}
             FIREHOSE_ETHEREUM=${{ inputs.firehose_ethereum || 'latest' }}
             # Full LTO `maxperf` is only worth its ~19m link tail for shippable
             # builds (tags); PRs and manual dispatch use `fast-build` (no LTO) to

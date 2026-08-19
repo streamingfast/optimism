@@ -46,8 +46,8 @@ import { IBigStepper } from "interfaces/dispute/IBigStepper.sol";
 /// before and after an upgrade.
 contract OPContractsManagerStandardValidator is ISemver {
     /// @notice The semantic version of the OPContractsManagerStandardValidator contract.
-    /// @custom:semver 2.10.5
-    string public constant version = "2.10.5";
+    /// @custom:semver 3.0.0
+    string public constant version = "3.0.0";
 
     /// @notice The SuperchainConfig contract.
     ISuperchainConfig public superchainConfig;
@@ -120,6 +120,9 @@ contract OPContractsManagerStandardValidator is ISemver {
     /// @notice The migration validator contract for post-interop-migration validation.
     IOPContractsManagerMigrationValidator public migrationValidator;
 
+    /// @notice The release-approved SP1 PLONK adapter address.
+    address public sp1PlonkAdapterImpl;
+
     /// @notice Struct containing the implementation addresses of the L1 contracts.
     struct Implementations {
         address l1ERC721BridgeImpl;
@@ -138,6 +141,7 @@ contract OPContractsManagerStandardValidator is ISemver {
         address superFaultDisputeGameImpl;
         address superPermissionedDisputeGameImpl;
         address zkDisputeGameImpl;
+        address sp1PlonkAdapterImpl;
     }
 
     /// @notice Struct containing the input parameters for the validation process.
@@ -199,6 +203,7 @@ contract OPContractsManagerStandardValidator is ISemver {
         superFaultDisputeGameImpl = _implementations.superFaultDisputeGameImpl;
         superPermissionedDisputeGameImpl = _implementations.superPermissionedDisputeGameImpl;
         zkDisputeGameImpl = _implementations.zkDisputeGameImpl;
+        sp1PlonkAdapterImpl = _implementations.sp1PlonkAdapterImpl;
     }
 
     /// @notice Returns a string representing the overrides that are set.
@@ -1050,10 +1055,11 @@ contract OPContractsManagerStandardValidator is ISemver {
     {
         IDisputeGameFactory factory = IDisputeGameFactory(_sysCfg.disputeGameFactory());
         LibGameArgs.ZKGameArgs memory args = LibGameArgs.decodeZK(factory.gameArgs(GameTypes.ZK_DISPUTE_GAME));
-
         _errors = internalRequire(args.absolutePrestate != bytes32(0), string.concat(_errorPrefix, "-70"), _errors);
         _errors = internalRequire(
-            args.verifier != address(0) && args.verifier.code.length > 0, string.concat(_errorPrefix, "-80"), _errors
+            args.verifier == sp1PlonkAdapterImpl && sp1PlonkAdapterImpl.code.length > 0,
+            string.concat(_errorPrefix, "-80"),
+            _errors
         );
         _errors = internalRequire(args.maxChallengeDuration > 0, string.concat(_errorPrefix, "-90"), _errors);
         _errors = internalRequire(args.maxProveDuration > 0, string.concat(_errorPrefix, "-100"), _errors);
@@ -1096,9 +1102,8 @@ contract OPContractsManagerStandardValidator is ISemver {
         // Note: Even if the devFeatureBitmap is on for ZK_DISPUTE_GAME, we treat the deployment pipeline and
         // as extension, the factory as the source of truth for deciding whether to validate the ZK game.
         // ZK is the only per-chain opt-in game type; mandatory game types fail loud in getGameImplementation()
-        // TODO(#21529): Once ZK is mandatory (not per-chain opt-in), remove this early return so chains
-        // without ZKDisputeGame registered fail validation. Companion to the ZKDG-NOSHAPE TODO in
-        // StandardValidatorUtils.sol.
+        // TODO(#21529): once ZK is mandatory (not opt-in), drop this early return so chains without a ZK game fail
+        // validation. Pairs with the ZKDG-NOSHAPE TODO in StandardValidatorUtils.sol.
         IDisputeGameFactory _factory = IDisputeGameFactory(_sysCfg.disputeGameFactory());
         if (address(_factory.gameImpls(GameTypes.ZK_DISPUTE_GAME)) == address(0)) {
             return _errors;

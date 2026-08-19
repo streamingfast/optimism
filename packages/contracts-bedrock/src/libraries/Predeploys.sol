@@ -421,7 +421,7 @@ library Predeploys {
         // feature. Both gates mirror the full condition checked in L2Genesis.
         records_[15] = PredeployRecord({
             proxy: CROSS_L2_INBOX,
-            variants: _variants("CrossL2Inbox", "CrossL2Inbox.sol:CrossL2Inbox", 668_000),
+            variants: _variants("CrossL2Inbox", "CrossL2Inbox.sol:CrossL2Inbox", 685_000),
             devFeatureGate: DevFeatures.OPTIMISM_PORTAL_INTEROP,
             isCustomGasToken: false,
             isInterop: true,
@@ -480,7 +480,7 @@ library Predeploys {
         records_[21] = PredeployRecord({
             proxy: CONDITIONAL_DEPLOYER,
             variants: _variants("ConditionalDeployer", "ConditionalDeployer.sol:ConditionalDeployer", 600_000),
-            devFeatureGate: DevFeatures.L2CM,
+            devFeatureGate: bytes32(0),
             isCustomGasToken: false,
             isInterop: false,
             isProxied: true,
@@ -488,8 +488,8 @@ library Predeploys {
         });
         records_[22] = PredeployRecord({
             proxy: L2_DEV_FEATURE_FLAGS,
-            variants: _variants("L2DevFeatureFlags", "L2DevFeatureFlags.sol:L2DevFeatureFlags", 328_228),
-            devFeatureGate: DevFeatures.L2CM,
+            variants: _variants("L2DevFeatureFlags", "L2DevFeatureFlags.sol:L2DevFeatureFlags", 332_000),
+            devFeatureGate: bytes32(0),
             isCustomGasToken: false,
             isInterop: false,
             isProxied: true,
@@ -627,7 +627,7 @@ library Predeploys {
                     // Additional conditions for interop
                     if (DevFeatures.isDevFeatureEnabled(records[i].devFeatureGate, DevFeatures.OPTIMISM_PORTAL_INTEROP))
                     {
-                        if (_fork < uint256(Fork.INTEROP) || !_useInterop) {
+                        if (_fork < uint256(Fork.LAGOON) || !_useInterop) {
                             return false;
                         }
                     }

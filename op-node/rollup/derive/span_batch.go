@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
@@ -649,22 +648,7 @@ func DeriveSpanBatch(batchData *BatchData, cfg *rollup.Config) (*SpanBatch, erro
 	if !ok {
 		return nil, NewCriticalError(errors.New("failed type assertion to SpanBatch"))
 	}
-	spanBatch, err := rawSpanBatch.ToSpanBatch(cfg.BlockTime, cfg.Genesis.L2Time, cfg.L2ChainID)
-	if err != nil {
-		return nil, err
-	}
-	// Reject PostExec transactions in blocks where SDM is not active.
-	for _, b := range spanBatch.Batches {
-		if cfg.IsSDM(b.Timestamp) {
-			continue
-		}
-		for _, raw := range b.Transactions {
-			if len(raw) > 0 && raw[0] == types.PostExecTxType {
-				return nil, fmt.Errorf("span batch contains PostExec tx at block ts=%d but SDM is not active", b.Timestamp)
-			}
-		}
-	}
-	return spanBatch, nil
+	return rawSpanBatch.ToSpanBatch(cfg.BlockTime, cfg.Genesis.L2Time, cfg.L2ChainID)
 }
 
 // ReadTxData reads raw RLP tx data from reader and returns txData and txType
