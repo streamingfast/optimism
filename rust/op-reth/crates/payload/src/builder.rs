@@ -38,7 +38,7 @@ use reth_optimism_txpool::{
     interop::{MaybeInteropTransaction, is_interop_tx, is_valid_interop},
 };
 use reth_payload_builder_primitives::PayloadBuilderError;
-use reth_payload_primitives::{BuildNextEnv, BuiltPayloadExecutedBlock};
+use reth_payload_primitives::{BuildNextEnv, BuiltPayload, BuiltPayloadExecutedBlock};
 use reth_payload_util::{BestPayloadTransactions, NoopPayloadTransactions, PayloadTransactions};
 use reth_primitives_traits::{
     HeaderTy, NodePrimitives, SealedHeader, SealedHeaderFor, SignedTransaction, TxTy,
@@ -270,13 +270,35 @@ where
         let state_provider = self.client.state_by_block_hash(ctx.parent().hash())?;
         let state = StateProviderDatabase::new(&state_provider);
 
-        if ctx.attributes().no_tx_pool() {
-            builder.build(state, &state_provider, ctx)
+        let outcome = if ctx.attributes().no_tx_pool() {
+            let outcome = builder.build(state, &state_provider, ctx)?;
+
+            // Firehose: `no_tx_pool` (derivation) blocks are constructed here and inserted as
+            // canonical without going through the traced `newPayload` engine path, so they would
+            // otherwise never emit a `FIRE BLOCK`. Re-execute the frozen block through the tracing
+            // executor. Re-execution is confined to these built blocks (older, L1-derived range),
+            // never the latency-critical live gossip path. No-op unless the tracer is installed.
+            if reth_firehose::is_tracer_initialized() {
+                if let BuildOutcomeKind::Freeze(payload) = &outcome {
+                    if let Some(executed) = payload.executed_block() {
+                        let mut trace_state = State::builder()
+                            .with_database(StateProviderDatabase::new(&state_provider))
+                            .with_bundle_update()
+                            .build();
+                        self.evm_config
+                            .firehose_trace_built_block(&mut trace_state, &executed.recovered_block)
+                            .map_err(|err| PayloadBuilderError::Internal(err.into()))?;
+                    }
+                }
+            }
+
+            outcome
         } else {
             // sequencer mode we can reuse cachedreads from previous runs
-            builder.build(cached_reads.as_db_mut(state), &state_provider, ctx)
-        }
-        .map(|out| out.with_cached_reads(cached_reads))
+            builder.build(cached_reads.as_db_mut(state), &state_provider, ctx)?
+        };
+
+        Ok(outcome.with_cached_reads(cached_reads))
     }
 
     /// Computes the witness for the payload.
@@ -485,7 +507,13 @@ impl<Txs> OpBuilder<'_, Txs> {
         if !ctx.attributes().no_tx_pool() {
             let best_txs = best(ctx.best_transaction_attributes(builder.evm_mut().block()));
             if ctx
-                .execute_best_transactions(&mut info, &mut builder, best_txs, None, None)?
+                .execute_best_transactions(
+                    &mut info,
+                    &mut builder,
+                    RethPayloadTransactions(best_txs),
+                    None,
+                    None,
+                )?
                 .is_some()
             {
                 return Ok(BuildOutcomeKind::Cancelled);
@@ -593,6 +621,50 @@ impl<Txs> OpBuilder<'_, Txs> {
             ..Default::default()
         })
     }
+}
+
+/// A [`PayloadTransactions`] iterator that is notified of the gas used by each
+/// yielded transaction once it is actually committed to the block.
+///
+/// `next()` yields a candidate, but the iterator doesn't otherwise learn whether
+/// it was included or how much gas it used. [`Self::on_commit`] closes that loop:
+/// the payload builder calls it once per committed transaction, in commit order,
+/// so a custom iterator can maintain its own per-inclusion state. Any data the
+/// iterator needs from the transaction itself is captured at `next()` time, where
+/// it still owns the transaction; commit reports only the gas.
+///
+/// A plain [`PayloadTransactions`] that doesn't care about inclusions can be
+/// adapted with [`RethPayloadTransactions`], whose `on_commit` is a no-op.
+pub trait PayloadTransactionsWithCommitHook: PayloadTransactions {
+    /// Invoked exactly once for the transaction most recently returned by `next()`,
+    /// after it is successfully executed and committed to the block, and BEFORE any
+    /// subsequent `next()` call, with the gas that transaction used. It is NOT invoked
+    /// for transactions that are skipped or rejected — whether or not `mark_invalid`
+    /// was called for them. Implementors may therefore attribute `gas_used` to the
+    /// most-recently-yielded transaction.
+    fn on_commit(&mut self, gas_used: u64);
+}
+
+/// Adapts a plain [`PayloadTransactions`] to [`PayloadTransactionsWithCommitHook`] by ignoring
+/// commit notifications. Lets the standard build path pass a stock pool iterator
+/// where a [`PayloadTransactionsWithCommitHook`] is required.
+#[derive(Debug)]
+pub struct RethPayloadTransactions<T>(pub T);
+
+impl<T: PayloadTransactions> PayloadTransactions for RethPayloadTransactions<T> {
+    type Transaction = T::Transaction;
+
+    fn next(&mut self, ctx: ()) -> Option<Self::Transaction> {
+        self.0.next(ctx)
+    }
+
+    fn mark_invalid(&mut self, sender: Address, nonce: u64) {
+        self.0.mark_invalid(sender, nonce);
+    }
+}
+
+impl<T: PayloadTransactions> PayloadTransactionsWithCommitHook for RethPayloadTransactions<T> {
+    fn on_commit(&mut self, _gas_used: u64) {}
 }
 
 /// A type that returns a the [`PayloadTransactions`] that should be included in the pool.
@@ -965,11 +1037,17 @@ where
     /// lifecycle.
     ///
     /// Returns `Ok(Some(()))` if the job was cancelled.
+    ///
+    /// `best_txs` is a [`PayloadTransactionsWithCommitHook`]: its
+    /// [`PayloadTransactionsWithCommitHook::on_commit`] is invoked once per committed
+    /// transaction, in commit order, with the gas it used, so a custom iterator can
+    /// maintain its own per-inclusion state. A plain [`PayloadTransactions`] satisfies
+    /// the trait via [`RethPayloadTransactions`], where `on_commit` is a no-op.
     pub fn execute_best_transactions<Builder>(
         &self,
         info: &mut ExecutionInfo,
         builder: &mut Builder,
-        mut best_txs: impl PayloadTransactions<
+        mut best_txs: impl PayloadTransactionsWithCommitHook<
             Transaction: PoolTransaction<Consensus = TxTy<Evm::Primitives>> + OpPooledTx,
         >,
         gas_limit_cap: Option<u64>,
@@ -1099,6 +1177,11 @@ where
 
             // update and add to total fees
             info.total_fees += U256::from(miner_fee) * U256::from(tx_gas_used);
+
+            // Report the gas used by each committed transaction so a custom
+            // `best_txs` can update its own per-inclusion state. `RethPayloadTransactions`
+            // makes this a no-op for a plain `PayloadTransactions`.
+            best_txs.on_commit(tx_gas_used);
 
             // Record the successfully committed transaction for callers that want per-call
             // visibility.

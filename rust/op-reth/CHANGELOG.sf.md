@@ -4,7 +4,28 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 `paradigmxyz/reth` (via the SF `streamingfast/reth` fork) and on top of
 `ethereum-optimism/optimism`'s `op-reth` tree.
 
-## Unreleased
+## v2.4.0-fh3.1-1
+
+### Fixed
+
+- Bumped the SF reth fork pin in `rust/Cargo.toml` from `v2.3.0-fh-2` to `v2.3.0-fh-7`, picking up
+  five Firehose fixes. No reth/revm/alloy version moves — the tags differ only in `crates/firehose`
+  (plus a small `payload_validator.rs` finality fix), so the `Cargo.lock` diff is purely the git
+  tag/rev of the `streamingfast/reth` source.
+  - fh-7: include the SELFDESTRUCT refund when resolving an account's post-transaction balance.
+    revm credits the beneficiary in place and records the move only inside its `AccountDestroyed`
+    journal entry on the truly-destroyed path (EIP-6780), so a coinbase, sender or fee vault that
+    received a suicide refund reported a `RewardTransactionFee` / `GasRefund` `old_balance`
+    contradicting the `SuicideRefund` event emitted moments earlier. The same resolver backs the
+    OP fee-vault credits in `OpPostTxExtras`.
+  - fh-6: emit the value-transfer balance changes when a transaction sends value to a precompile
+    and then fails; the reverted callee had its `BalanceTransfer` journal entry truncated before
+    the journal walk ran.
+  - fh-5: fix a call/receipt log-count mismatch panic when a native-precompile log is emitted at a
+    journal index freed by a reverted opcode `LOG`.
+  - fh-3: gas-bound cap on `step_keccak256`, preventing an OOM panic for operations that would
+    out-of-gas anyway.
+  - fh-4 is CI/packaging only (Docker build for the reth fork), no runtime effect here.
 
 ### Fixed
 
@@ -16,6 +37,15 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 
 ### Changed
 
+- Merged upstream `op-reth/v2.4.0` into the Firehose branch. No reth/revm/alloy version bump
+  (reth pin stays `v2.3.0-fh-2`): upstream's `[workspace.dependencies]` reth/revm/alloy pins are
+  byte-for-byte identical between `op-reth/v2.3.3` and `op-reth/v2.4.0` (still `paradigmxyz/reth`
+  tag `v2.3.0`), so `streamingfast/reth v2.3.0-fh-2` already covers it and no new reth tag was
+  required. The merge was conflict-free — upstream's op-reth changes (`node/src/node.rs`,
+  `payload/src/builder.rs` + tests, `txpool/src/lib.rs`, new `node/tests/it/custom_pool/*`) do not
+  overlap the Firehose hooks, which sit in disjoint functions (`OpFirehoseEngineValidatorBuilder`/
+  `OpFirehoseEvmConfig` wiring in `node.rs`, `firehose_trace_built_block` in the `no_tx_pool`
+  branch of `build_payload`). The Firehose crate `crates/firehose/` is untouched upstream.
 - Merged upstream `op-reth/v2.3.3` into the Firehose branch. No reth/revm/alloy version bump
   (reth pin stays `v2.3.0-fh`), so the Firehose tracing code is unchanged. Adaptations:
   - Enabled the `reth-codec` feature on the firehose crate's `reth-optimism-primitives`

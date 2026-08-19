@@ -3,10 +3,12 @@
 # Maintained by StreamingFast and intentionally kept separate from upstream CI
 # so that upstream merges stay clean.
 #
-# Triggers: `firehose/*` branch pushes, `*-fh*` tags, pull requests and manual
-# dispatch. Pull requests opened from a fork get a read-only GITHUB_TOKEN, so the
-# login/push steps are skipped for them (the image still builds, to validate the
-# Dockerfile); same-repo ("inner") PRs and pushes authenticate and push normally.
+# Triggers: `*-fh*` tags, pull requests and manual dispatch. Branch pushes do not
+# build — open a PR (or push a tag) to get an image, which keeps every commit to a
+# single build. Pull requests opened from a fork get a read-only GITHUB_TOKEN, so
+# the login/push steps are skipped for them (the image still builds, to validate
+# the Dockerfile); same-repo ("inner") PRs and tag pushes authenticate and push
+# normally. Only tag builds use the full-LTO `maxperf` profile.
 #
 # Single architecture (linux/amd64): the op-reth `maxperf` full-node build is too
 # heavy to reliably build on GitHub-hosted arm64 runners, so we do not produce a
@@ -41,8 +43,8 @@ jobs:
       packages: write
 
     env:
-      # Pushes (branch/tag), same-repo PRs and manual dispatch can authenticate
-      # to ghcr and push images. A PR opened from a fork gets a read-only
+      # Tag pushes, same-repo PRs and manual dispatch can authenticate to ghcr
+      # and push images. A PR opened from a fork gets a read-only
       # GITHUB_TOKEN with no `packages: write`, so we must skip login and push for
       # it — the build still runs to validate the Dockerfile compiles. The value
       # is the string "true"/"false".
@@ -131,9 +133,9 @@ jobs:
             VERSION=${{ steps.extract-version.outputs.VERSION }}
             FIREHOSE_ETHEREUM=${{ inputs.firehose_ethereum || 'latest' }}
             # Full LTO `maxperf` is only worth its ~19m link tail for shippable
-            # builds (tags); PRs use `fast-build` (no LTO) to validate the build
-            # faster. Mirrors upstream build-images.yaml.
-            BUILD_PROFILE=${{ github.event_name == 'pull_request' && 'fast-build' || 'maxperf' }}
+            # builds (tags); PRs and manual dispatch use `fast-build` (no LTO) to
+            # validate faster.
+            BUILD_PROFILE=${{ startsWith(github.ref, 'refs/tags/') && 'maxperf' || 'fast-build' }}
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
