@@ -3,9 +3,10 @@
 # Maintained by StreamingFast and intentionally kept separate from upstream CI
 # so that upstream merges stay clean.
 #
-# Triggers: `*-fh*` tags, pull requests and manual dispatch. Branch pushes do not
-# build — open a PR (or push a tag) to get an image, which keeps every commit to a
-# single build. Pull requests opened from a fork get a read-only GITHUB_TOKEN, so
+# Triggers: `release/*` branch pushes, `*-fh*` tags, pull requests and manual
+# dispatch. The fork's branches were renamed from `firehose/*` to `release/*`, so
+# the old glob matched nothing and branch pushes silently stopped building.
+# Pull requests opened from a fork get a read-only GITHUB_TOKEN, so
 # the login/push steps are skipped for them (the image still builds, to validate
 # the Dockerfile); same-repo ("inner") PRs and tag pushes authenticate and push
 # normally. Only tag builds use the full-LTO `maxperf` profile.
@@ -19,7 +20,7 @@ name: Build, push and release (if tag)
 on:
   push:
     branches:
-      - "firehose/*"
+      - "release/*"
     tags:
       - "*-fh*"
   pull_request:
