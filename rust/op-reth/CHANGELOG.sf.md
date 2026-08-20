@@ -4,6 +4,11 @@ This changelog tracks changes that the StreamingFast fork applies on top of upst
 `paradigmxyz/reth` (via the SF `streamingfast/reth` fork) and on top of
 `ethereum-optimism/optimism`'s `op-reth` tree.
 
+## v2.4.2-fh3.1-1
+
+Bump streamingfast/reth dependency to `op-reth-v2.4.2-fh3.1` specially crafted to align with our requirement upstreams
+Still based on `op-rs/reth` branch `optimism`, commit `aef8d3e`
+
 ## v2.4.2-fh3.1
 
 Bumps the SF op-reth fork to upstream `op-reth/v2.4.2` — 389 upstream commits. Upstream
