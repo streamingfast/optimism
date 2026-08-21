@@ -2,7 +2,7 @@ package proofs
 
 import (
 	"context"
-	"encoding/binary"
+	"fmt"
 	"math/big"
 	"time"
 
@@ -112,6 +112,26 @@ func (g *ZKGame) ClaimData() ZKClaimData {
 	return contract.Read(g.contract.ClaimData())
 }
 
+// WaitForClaimData retries transient read failures until ctx ends or the DSL timeout elapses.
+func (g *ZKGame) WaitForClaimData(ctx context.Context) (ZKClaimData, error) {
+	timedCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var claim ZKClaimData
+	var lastReadErr error
+	err := wait.For(timedCtx, time.Second, func() (bool, error) {
+		claim, lastReadErr = contractio.Read(g.contract.ClaimData(), timedCtx)
+		if lastReadErr != nil {
+			g.t.Logf("Zk game %v claim data unavailable: %v", g.Address, lastReadErr)
+		}
+		return lastReadErr == nil, nil
+	})
+	if err != nil && lastReadErr != nil {
+		return claim, fmt.Errorf("%w; last read error: %w", err, lastReadErr)
+	}
+	return claim, err
+}
+
 func (g *ZKGame) ProposalStatus() ZKProposalStatus {
 	return ZKProposalStatus(g.ClaimData().Status)
 }
@@ -142,12 +162,6 @@ func (g *ZKGame) Challenge(challenger *dsl.EOA) ZKClaimData {
 	claim := g.ClaimData()
 	g.require.Equal(ZKProposalChallenged, ZKProposalStatus(claim.Status))
 	return claim
-}
-
-func (g *ZKGame) Prove(prover *dsl.EOA, proof []byte) ZKClaimData {
-	receipt := contract.Write(prover, g.contract.Prove(proof), txplan.WithGasRatio(2))
-	g.require.Equal(types.ReceiptStatusSuccessful, receipt.Status)
-	return g.ClaimData()
 }
 
 func (g *ZKGame) Resolve(eoa *dsl.EOA) gameTypes.GameStatus {
@@ -253,30 +267,57 @@ func (g *ZKGame) WaitForProposalStatus(expected ZKProposalStatus) {
 func (f *DisputeGameFactory) ZKGameImpl() *ZKDisputeGame {
 	impl := f.GameImpl(gameTypes.ZKDisputeGameType)
 	raw := f.GameArgs(gameTypes.ZKDisputeGameType)
-	f.require.Len(raw, gameargs.ZKArgsLength, "ZK game args must be exactly %d bytes", gameargs.ZKArgsLength)
-
-	var prestate common.Hash
-	copy(prestate[:], raw[0:32])
-
-	var verifier common.Address
-	copy(verifier[:], raw[32:52])
-
-	var asr common.Address
-	copy(asr[:], raw[100:120])
-
-	var weth common.Address
-	copy(weth[:], raw[120:140])
+	args, err := gameargs.ParseZK(raw)
+	f.require.NoError(err, "failed to parse ZK game args")
 
 	return &ZKDisputeGame{
 		Address: impl.Address,
-		Args: gameargs.ZKGameArgs{
-			AbsolutePrestate:     prestate,
-			Verifier:             verifier,
-			MaxChallengeDuration: binary.BigEndian.Uint64(raw[52:60]),
-			MaxProveDuration:     binary.BigEndian.Uint64(raw[60:68]),
-			ChallengerBond:       new(big.Int).SetBytes(raw[68:100]),
-			AnchorStateRegistry:  asr,
-			Weth:                 weth,
-		},
+		Args:    args,
 	}
+}
+
+// ZKWithdrawal mirrors DelayedWETH's WithdrawalRequest struct
+// (amount, timestamp), as returned by the public withdrawals mapping getter.
+type ZKWithdrawal struct {
+	Amount    *big.Int
+	Timestamp *big.Int
+}
+
+// MaturesAt returns the first L1 timestamp at which this withdrawal can be
+// paid out under the given DelayedWETH delay (DelayedWETH.withdraw requires
+// `timestamp + delay <= block.timestamp`).
+func (w ZKWithdrawal) MaturesAt(delay *big.Int) uint64 {
+	return bigs.Uint64Strict(new(big.Int).Add(w.Timestamp, delay))
+}
+
+type delayedWETHBinding struct {
+	Withdrawals func(common.Address, common.Address) bindings.TypedCall[ZKWithdrawal] `sol:"withdrawals"`
+	Delay       func() bindings.TypedCall[*big.Int]                                   `sol:"delay"`
+}
+
+// DelayedWETH exposes the minimal DelayedWETH read surface needed to observe
+// two-phase bond claiming (unlock, then withdraw after the delay).
+type DelayedWETH struct {
+	contract *delayedWETHBinding
+}
+
+// DelayedWETH binds the DelayedWETH contract at addr (e.g. the ZK game
+// implementation's weth arg) using the factory's L1 client.
+func (f *DisputeGameFactory) DelayedWETH(addr common.Address) *DelayedWETH {
+	weth := bindings.NewBindings[delayedWETHBinding](
+		bindings.WithClient(f.ethClient),
+		bindings.WithTo(addr),
+		bindings.WithTest(f.t),
+	)
+	return &DelayedWETH{contract: &weth}
+}
+
+// Withdrawal returns the pending withdrawal request the game holds for recipient.
+func (w *DelayedWETH) Withdrawal(game, recipient common.Address) ZKWithdrawal {
+	return contract.Read(w.contract.Withdrawals(game, recipient))
+}
+
+// Delay returns the withdrawal delay in seconds.
+func (w *DelayedWETH) Delay() *big.Int {
+	return contract.Read(w.contract.Delay())
 }

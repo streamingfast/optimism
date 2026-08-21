@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	optypes "github.com/ethereum-optimism/optimism/op-core/types"
 	opnodecfg "github.com/ethereum-optimism/optimism/op-node/config"
 	rollupNode "github.com/ethereum-optimism/optimism/op-node/node"
 	"github.com/ethereum-optimism/optimism/op-node/node/safedb"
@@ -25,12 +26,9 @@ import (
 	"github.com/ethereum-optimism/optimism/op-supernode/supernode/resources"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	gethlog "github.com/ethereum/go-ethereum/log"
 	"github.com/prometheus/client_golang/prometheus"
 )
-
-const virtualNodeVersion = "0.1.0"
 
 const (
 	// defaultWaitReadyPoll is the polling interval used by
@@ -94,7 +92,7 @@ type ChainContainer interface {
 	VerifierCurrentL1() (eth.BlockID, bool)
 	// FetchReceipts fetches the receipts for a given block by hash.
 	// Returns block info and receipts, or an error if the block or receipts cannot be fetched.
-	FetchReceipts(ctx context.Context, blockHash eth.BlockID) (eth.BlockInfo, types.Receipts, error)
+	FetchReceipts(ctx context.Context, blockHash eth.BlockID) (eth.BlockInfo, optypes.Receipts, error)
 	// BlockTime returns the block time in seconds for this chain.
 	BlockTime() uint64
 	// PruneDeniedAtOrAfterTimestamp removes deny-list entries with DecisionTimestamp >= timestamp.
@@ -216,6 +214,7 @@ func NewChainContainer(
 	rpcRouter RPCRouterGate,
 	addMetricsRegistry func(key string, g prometheus.Gatherer),
 	metrics *resources.SupernodeMetrics,
+	appVersion string,
 ) (InteropChain, error) {
 	if metrics == nil {
 		metrics = resources.NewSupernodeMetrics()
@@ -230,7 +229,7 @@ func NewChainContainer(
 		rpcHandler:         rpcHandler,
 		rpcRouter:          rpcRouter,
 		addMetricsRegistry: addMetricsRegistry,
-		appVersion:         virtualNodeVersion,
+		appVersion:         appVersion,
 		virtualNodeFactory: defaultVirtualNodeFactory,
 		metrics:            metrics,
 	}
@@ -700,7 +699,7 @@ func (c *simpleChainContainer) PayloadByNumber(ctx context.Context, number uint6
 	return c.engine.PayloadByNumber(ctx, number)
 }
 
-func (c *simpleChainContainer) FetchReceipts(ctx context.Context, blockID eth.BlockID) (eth.BlockInfo, types.Receipts, error) {
+func (c *simpleChainContainer) FetchReceipts(ctx context.Context, blockID eth.BlockID) (eth.BlockInfo, optypes.Receipts, error) {
 	if c.engine == nil {
 		return nil, nil, engine_controller.ErrNoEngineClient
 	}
@@ -751,23 +750,38 @@ func (c *simpleChainContainer) RewindEngine(ctx context.Context, target *eth.Exe
 	if target == nil || target.ExecutionPayload == nil {
 		return engine_controller.ErrRewindNilTarget
 	}
+	start := time.Now()
+	if c.metrics != nil {
+		defer func() {
+			c.metrics.ChainRewindDuration.WithLabelValues(c.chainID.String()).Observe(time.Since(start).Seconds())
+		}()
+	}
+	recordFailure := func(stage string) {
+		if c.metrics != nil {
+			c.metrics.ChainRewindFailures.WithLabelValues(c.chainID.String(), stage).Inc()
+		}
+	}
 	timestamp := uint64(target.ExecutionPayload.Timestamp)
 	if !c.resetting.CompareAndSwap(false, true) {
+		recordFailure("setup")
 		return fmt.Errorf("reset already in progress")
 	}
 	defer c.resetting.Store(false)
 
 	vn := c.getVN()
 	if vn == nil {
+		recordFailure("setup")
 		return fmt.Errorf("virtual node not initialized")
 	}
 	if c.engine == nil {
+		recordFailure("setup")
 		return fmt.Errorf("engine not initialized")
 	}
 
 	// Pause the container to stop it restarting the vn when we kill it
 	err := c.Pause(ctx)
 	if err != nil {
+		recordFailure("pause")
 		return err
 	}
 	// Always resume the container on return, even if we exit early due to context cancellation
@@ -779,6 +793,7 @@ func (c *simpleChainContainer) RewindEngine(ctx context.Context, target *eth.Exe
 	// stop the vn
 	err = vn.Stop(ctx)
 	if err != nil {
+		recordFailure("stop_vn")
 		return err
 	}
 	c.log.Info("chain_container/RewindEngine: stopped vn")
@@ -788,6 +803,7 @@ retryLoop:
 		err = c.engine.Rewind(ctx, target)
 		switch {
 		case isCriticalRewindError(err):
+			recordFailure("engine_rewind")
 			c.log.Error("chain_container/RewindEngine: critical error", "err", err)
 			return err
 		case err == nil:
@@ -804,6 +820,7 @@ retryLoop:
 			c.log.Error("chain_container/RewindEngine: temporary error", "err", err)
 			select {
 			case <-ctx.Done():
+				recordFailure("engine_rewind")
 				return ctx.Err()
 			case <-time.After(time.Second):
 			}
@@ -818,6 +835,7 @@ retryLoop:
 	// resume the chain container to trigger a new vn to be started
 	err = c.Resume(ctx)
 	if err != nil {
+		recordFailure("resume")
 		return err
 	}
 
@@ -827,6 +845,7 @@ retryLoop:
 	// that window 503s on the router gate. Symmetric with the post-Resume
 	// barrier in interop.applyPendingTransition.
 	if err := c.WaitReady(ctx); err != nil {
+		recordFailure("wait_ready")
 		return fmt.Errorf("RewindEngine: VN not ready after resume: %w", err)
 	}
 	c.log.Info("chain_container/RewindEngine: resumed container, VN ready")

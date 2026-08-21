@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum-optimism/optimism/op-core/predeploys"
+	optypes "github.com/ethereum-optimism/optimism/op-core/types"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/stack"
 	"github.com/ethereum-optimism/optimism/op-devstack/sysgo"
@@ -191,6 +192,28 @@ func (el *L2ELNode) ReachedFn(label eth.BlockLabel, target uint64, attempts int)
 				logger.Info("L2EL sync status", "current", head.Number)
 				return fmt.Errorf("expected head for label=%s to advance to target=%d, but got current=%d", label, target, head.Number)
 			})
+	}
+}
+
+// ReachedWithProgressFn is the progress-aware analogue of ReachedFn: it waits
+// for the head at label to reach target, tolerating a self-recovering slowdown
+// while failing fast on a genuinely stuck node. It succeeds when label reaches
+// target, and fails when either progressLabel (a strictly more-live label, e.g.
+// eth.Unsafe) has not advanced for stallTimeout, or the overall maxWait elapses.
+// Use it for a catch-up wait whose target head is gated by a pipeline that can
+// transiently stall under load (e.g. the EL safe label catching up after interop
+// resumes). Polls every 2s. See L2CLNode.ReachedWithProgressFn.
+func (el *L2ELNode) ReachedWithProgressFn(label, progressLabel eth.BlockLabel, target uint64, maxWait, stallTimeout time.Duration) CheckFunc {
+	return func() error {
+		logger := el.log.With("name", el.inner.Name(), "chain", el.ChainID(), "label", label, "progress_label", progressLabel, "target", target)
+		headNum := func(l eth.BlockLabel) func() (uint64, error) {
+			return func() (uint64, error) {
+				ref, err := el.blockRefByLabel(l)
+				return ref.Number, err
+			}
+		}
+		return awaitHeadWithProgress(el.ctx, logger, headNum(label), headNum(progressLabel), target, maxWait, stallTimeout,
+			fmt.Sprintf("expected head for label=%s to advance to target=%d", label, target), string(progressLabel))
 	}
 }
 
@@ -445,7 +468,7 @@ func (el *L2ELNode) Start() {
 }
 
 func (el *L2ELNode) PeerWith(peer *L2ELNode) {
-	sysgo.ConnectP2P(el.ctx, el.require, el.inner.L2EthClient().RPC(), peer.inner.L2EthClient().RPC(), false)
+	sysgo.ConnectP2P(el.ctx, el.require, el.inner.L2EthClient().RPC(), peer.inner.L2EthClient().RPC())
 }
 
 func (el *L2ELNode) DisconnectPeerWith(peer *L2ELNode) {
@@ -557,7 +580,7 @@ func (el *L2ELNode) ChainBlockID(chainID eth.ChainID, number uint64) (eth.BlockI
 
 // WaitForReceipt waits for a transaction receipt to be available, retrying until found or timeout.
 func (el *L2ELNode) WaitForReceipt(txHash common.Hash) *types.Receipt {
-	var receipt *types.Receipt
+	var receipt *optypes.Receipt
 	err := retry.Do0(el.ctx, 30, &retry.FixedStrategy{Dur: 500 * time.Millisecond}, func() error {
 		var err error
 		receipt, err = el.inner.EthClient().TransactionReceipt(el.ctx, txHash)
@@ -567,7 +590,7 @@ func (el *L2ELNode) WaitForReceipt(txHash common.Hash) *types.Receipt {
 		return nil
 	})
 	el.require.NoError(err, "failed to get receipt for tx %s", txHash.Hex())
-	return receipt
+	return &receipt.Receipt
 }
 
 func (el *L2ELNode) MatchedFn(refNode SyncStatusProvider, lvl safety.Level, attempts int) CheckFunc {
