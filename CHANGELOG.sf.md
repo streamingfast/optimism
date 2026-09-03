@@ -9,6 +9,30 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## world-chain-v2.4.3-fh3.1
+
+Moves the SF op-reth fork to upstream commit `96ffbb2a`, the untagged `develop` rev that
+world-chain `v2.4.3` pins. There is no op-reth release tag on it, hence the world-chain
+name on this one: `96ffbb2a` exists to carry the superchain-registry update for the World
+Chain Karst activations.
+
+### Changed
+
+- Merged 107 upstream commits (`op-reth/v2.4.2`..`96ffbb2a`). Reth pin is unchanged —
+  upstream still pins `op-rs/reth` rev `aef8d3ef`, so `streamingfast/reth` tag
+  `op-reth-v2.4.2-fh3.1` still applies.
+- `op-reth` now parses its CLI with upstream's `parse_with_denied_args()`. The Firehose
+  tracer is still initialized first, before any argument parsing.
+- Dropped the `clap` dependency from the `op-reth` binary, matching upstream; nothing in
+  the crate used it.
+
+### Notes
+
+- The chainspec build script asserts that the gitignored
+  `rust/op-reth/crates/chainspec/res/superchain-configs.tar` matches the committed
+  `.sha256`. This merge updates that hash, so an existing checkout needs its
+  `superchain-registry` submodule updated and the stale tar removed before it will build.
+
 ## v2.4.2-fh3.1
 
 Bumps the SF op-reth fork to upstream `op-reth/v2.4.2`. Upstream `v2.4.1` is an
