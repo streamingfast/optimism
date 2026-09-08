@@ -17,9 +17,9 @@ just build-go
 ### The `op-core/superchain` bundle
 
 `op-core/superchain` `//go:embed`s `superchain-configs.zip`, which is **gitignored** (only
-its `.sha256` is committed). Any package that transitively imports it — op-node and most
-binaries, plus `packages/contracts-bedrock/scripts/go-ffi`, `op-e2e`, `op-acceptance-tests`,
-op-deployer, and the kona/op-reth Go tests — won't compile until the bundle is built:
+its `.sha256` is committed). Any package that transitively imports it — op-node and several
+binaries, plus `op-e2e`, `op-acceptance-tests`, op-deployer, and the kona/op-reth Go
+tests — won't compile until the bundle is built:
 
 ```
 op-core/superchain/chain.go:NN: pattern superchain-configs.zip: no matching files found
@@ -37,6 +37,12 @@ just sync-superchain        # all superchain bundles (Go + kona/op-reth Rust) �
 
 Because the zip is usually already on disk, a missing-bundle problem is invisible locally
 and only surfaces in CI's clean checkout (see [ci-ops.md](ci-ops.md)).
+
+The set of packages allowed to reach the bundle is pinned by `TestBundleReachability`
+(`op-core/superchain/deps_test.go`): a new transitive edge into `op-core/superchain` from a
+package outside its `bundleAllowed` allowlist fails that test. Each allowlist entry is a
+package downstream Go modules cannot import, so extend the list only for genuine
+registry consumers.
 
 ### Running Tests
 
@@ -61,6 +67,7 @@ cd <service> && just generate-mocks
 
 ## Conventions
 
+- **OP type encodings**: a change to an OP type's wire format, hash rule, or codec accept-set has to agree with `rust/op-alloy` (the types op-reth and kona consume), not just op-geth — see [Cross-implementation parity](opgeth-decoupling.md#cross-implementation-parity).
 - **Pointers to values**: use `ptr.New(v)` from `github.com/ethereum-optimism/optimism/op-service/ptr` to take the address of a literal or expression — common for optional `*uint64` config fields like fork-activation times (`cfg.SomeTime = ptr.New(uint64(123))`). Don't define a local `ptr`/`ptrTo` helper; the shared one avoids per-package duplicates, and a local `func ptr` collides with importing the `ptr` package in the same package.
 
 ## Linting
