@@ -9,6 +9,24 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## world-chain-v2.4.3-fh3.2
+
+Re-pins the reth dependency graph onto `streamingfast/reth` `op-reth-v2.4.2-fh3.2`, which stops
+a block from advertising a finalized block that is not one of its own ancestors.
+
+### Changed
+
+* Bumped the 74 `streamingfast/reth` pins in `rust/Cargo.toml` from `op-reth-v2.4.2-fh3.1` to
+  `op-reth-v2.4.2-fh3.2`. No other dependency moves.
+
+### Fixed
+
+* A block emitted from a side branch no longer carries the canonical chain's finalized head
+  (`streamingfast/reth` streamingfast/reth#30). Firehose transmits finality as a bare block
+  number, so the consumer resolved it against its own block at that height — a different one —
+  and marked it irreversible, then saw the reorg replace it. The advertised block is now clamped
+  to the point where the emitted block's branch meets the canonical chain.
+
 ## world-chain-v2.4.3-fh3.1
 
 Moves the SF op-reth fork to upstream commit `96ffbb2a`, the untagged `develop` rev that
