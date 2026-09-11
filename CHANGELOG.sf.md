@@ -9,6 +9,25 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## op-reth-v2.4.3-fh3.1
+
+Bumps the SF op-reth fork to upstream `op-reth/v2.4.3`. The world-chain rev `96ffbb2a` is an
+ancestor of `v2.4.3`, so this merge carries everything in `world-chain-v2.4.3-fh3.2` plus 51
+upstream commits.
+
+### Changed
+
+* Merged upstream `op-reth/v2.4.3`. The consensus-relevant change is that op-reth, op-alloy
+  and kona now reject transactions whose EIP-2718 encoding is not canonical
+  (ethereum-optimism/optimism#22778). No Firehose code changed.
+* Reth pin unchanged: upstream `v2.4.3` still pins `op-rs/reth` rev `aef8d3ef`, so
+  `streamingfast/reth` tag `op-reth-v2.4.2-fh3.2` still applies. That tag carries the same
+  Firehose fixes as `reth-v2.5.0-fh3.1-1` (genesis block on empty-chain start, finality
+  clamped to the emitted block's branch).
+* `alloy-evm` stays locked at `0.37.0` against upstream's `0.37.1`, so the
+  `streamingfast/evm` `v0.37.0-sf` patch still applies and block traces keep their
+  `systemCalls`.
+
 ## world-chain-v2.4.3-fh3.2
 
 Re-pins the reth dependency graph onto `streamingfast/reth` `op-reth-v2.4.2-fh3.2`, which stops
