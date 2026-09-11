@@ -9,6 +9,18 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## world-chain-v2.4.3-fh3.1-1
+
+Same code as `world-chain-v2.4.3-fh3.2`, released under the `fh3.1-N` naming from the new
+`release/world-chain-2.x` branch, which carries the op-reth line that world-chain `v2.4.3` pins
+(upstream rev `96ffbb2a`).
+
+### Changed
+
+* Re-pointed the 74 `streamingfast/reth` pins in `rust/Cargo.toml` from `op-reth-v2.4.2-fh3.2`
+  to `world-chain-v2.4.3-fh3.1-1`. Both tags are the same reth commit (`08953593`); the new tag
+  lives on `streamingfast/reth` `release/world-chain-2.x`.
+
 ## world-chain-v2.4.3-fh3.2
 
 Re-pins the reth dependency graph onto `streamingfast/reth` `op-reth-v2.4.2-fh3.2`, which stops
