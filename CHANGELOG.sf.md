@@ -9,6 +9,12 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## Unreleased
+
+### Changed
+
+- Firehose `Call.keccak_preimages` now keeps only the preimages that explain a storage change key of the transaction or system call; set `FIREHOSE_ETHEREUM_TRACER_DISABLE_KECCAK_FILTER=true` to keep them all (streamingfast/evm-firehose-tracer-rs#36).
+
 ## world-chain-v2.4.3-fh3.1-2
 
 ### Changed
