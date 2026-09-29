@@ -13,7 +13,7 @@ most recent release at the top.
 
 ### Changed
 
-- Firehose `Call.keccak_preimages` now keeps only the preimages that explain a storage change key of the transaction or system call; set `FIREHOSE_ETHEREUM_TRACER_DISABLE_KECCAK_FILTER=true` to keep them all (streamingfast/evm-firehose-tracer-rs#36).
+- Firehose `Call.keccak_preimages` now keeps only the preimages that explain a storage change key of the transaction or system call (streamingfast/evm-firehose-tracer-rs#36).
 
 ## world-chain-v2.4.3-fh3.1-2
 
