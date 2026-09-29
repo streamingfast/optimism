@@ -446,7 +446,7 @@ reth-firehose = { git = "https://github.com/streamingfast/reth.git", branch = "f
 
 # ==================== FIREHOSE TRACER (crates.io) ====================
 # Track the same major as the SF reth fork (`firehose/2.x` declares `firehose-tracer = "5"`).
-firehose-tracer = "5"
+firehose-tracer = "5.5.0"
 
 # ==================== REVM (latest: op-reth versions) ====================
 revm = { version = "41.0.0", default-features = false }
@@ -741,11 +741,6 @@ snmalloc-rs = { version = "0.3.8", features = ["build_cc"] }
 rocksdb = { version = "0.24.0", default-features = false }
 
 [patch.crates-io]
-## Firehose additions
-# Temporary: the keccak preimage filter is not on crates.io yet. Remove once firehose-tracer
-# 5.5.0 is published and the lock points to it.
-firehose-tracer = { git = "https://github.com/streamingfast/evm-firehose-tracer-rs.git", rev = "3321aec1ebb9e215de2bd9cc58e7f1726496e47f" }
-
 ## Firehose additions
 # SF fork of alloy-evm that routes block-level system calls (EIP-4788 beacon root,
 # EIP-2935 parent block hash, OP withdrawals, etc.) through the revm Inspector, so the
