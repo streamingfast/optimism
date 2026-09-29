@@ -9,7 +9,7 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
-## Unreleased
+## world-chain-v2.4.3-fh3.1-3
 
 ### Changed
 
