@@ -367,82 +367,82 @@ reth-rpc-traits = { version = "0.5.0", default-features = false }
 reth-zstd-compressors = { version = "0.5.0", default-features = false }
 
 # ==================== RETH CRATES (git: streamingfast/reth tag op-reth-v2.4.2-fh3.1-2 (following branch release/optimism-2.x), Firehose fork of upstream op-rs/reth, ~op-reth v2.4.2) ====================
-reth = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-basic-payload-builder = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-chain-state = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-chainspec = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-cli = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-cli-commands = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-cli-runner = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-cli-util = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-consensus = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-consensus-common = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-db = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-db-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-db-common = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-downloaders = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-e2e-test-utils = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-engine-local = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-engine-primitives = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-engine-tree = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-errors = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-eth-wire = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-eth-wire-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-ethereum = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-ethereum-cli = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-ethereum-consensus = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-ethereum-forks = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-ethereum-primitives = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-evm = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-evm-ethereum = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-exex = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-exex-test-utils = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-execution-cache = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-execution-errors = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-execution-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-fs-util = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-metrics = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-network = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-network-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-network-peers = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-node-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-node-builder = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-node-core = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-node-ethereum = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-node-events = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-node-metrics = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-payload-builder = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-payload-builder-primitives = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-payload-primitives = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-payload-util = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-payload-validator = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-provider = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-prune = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-prune-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-revm = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-rpc = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-rpc-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-rpc-builder = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-rpc-engine-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-rpc-eth-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-rpc-eth-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-rpc-server-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-stages = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-stages-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-static-file = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-static-file-types = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-storage-api = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-storage-errors = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-tasks = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-tracing = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-transaction-pool = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-trie = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-trie-common = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x", default-features = false }
-reth-trie-db = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
-reth-trie-parallel = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
+reth = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-basic-payload-builder = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-chain-state = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-chainspec = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-cli = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-cli-commands = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-cli-runner = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-cli-util = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-consensus = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-consensus-common = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-db = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-db-api = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-db-common = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-downloaders = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-e2e-test-utils = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-engine-local = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-engine-primitives = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-engine-tree = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-errors = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-eth-wire = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-eth-wire-types = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-ethereum = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-ethereum-cli = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-ethereum-consensus = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-ethereum-forks = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-ethereum-primitives = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-evm = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-evm-ethereum = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-exex = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-exex-test-utils = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-execution-cache = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-execution-errors = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-execution-types = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-fs-util = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-metrics = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-network = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-network-api = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-network-peers = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-node-api = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-node-builder = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-node-core = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-node-ethereum = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-node-events = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-node-metrics = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-payload-builder = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-payload-builder-primitives = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-payload-primitives = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-payload-util = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-payload-validator = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-provider = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-prune = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-prune-types = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-revm = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-rpc = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-rpc-api = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-rpc-builder = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-rpc-engine-api = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-rpc-eth-api = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-rpc-eth-types = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-rpc-server-types = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-stages = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-stages-types = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-static-file = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-static-file-types = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-storage-api = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-storage-errors = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-tasks = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-tracing = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-transaction-pool = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-trie = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-trie-common = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3", default-features = false }
+reth-trie-db = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
+reth-trie-parallel = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
 
 # StreamingFast Firehose instrumentation crate (lives in the SF reth fork only).
-reth-firehose = { git = "https://github.com/streamingfast/reth.git", branch = "firehose-keccak-filter/optimism-2.x" }
+reth-firehose = { git = "https://github.com/streamingfast/reth.git", tag = "op-reth-v2.4.2-fh3.1-3" }
 
 # ==================== FIREHOSE TRACER (crates.io) ====================
 # Track the same major as the SF reth fork (`firehose/2.x` declares `firehose-tracer = "5"`).
