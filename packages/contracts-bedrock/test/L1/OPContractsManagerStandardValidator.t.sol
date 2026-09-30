@@ -117,6 +117,12 @@ contract BadVersionReturner {
     }
 }
 
+/// @notice Returns the expected pause identifier.
+function expectedETHLockboxFor(ISystemConfig _sysCfg) view returns (address) {
+    IOptimismPortal2 portal = IOptimismPortal2(payable(_sysCfg.optimismPortal()));
+    return address(portal.ethLockbox());
+}
+
 /// @title OPContractsManagerStandardValidator_TestInit
 /// @notice Base contract for `OPContractsManagerStandardValidator` tests, handles common setup.
 abstract contract OPContractsManagerStandardValidator_TestInit is CommonTest {
@@ -868,16 +874,28 @@ contract OPContractsManagerStandardValidator_OptimismPortal_Test is OPContractsM
 /// @title OPContractsManagerStandardValidator_ETHLockbox_Test
 /// @notice Tests validation of `ETHLockbox` configuration
 contract OPContractsManagerStandardValidator_ETHLockbox_Test is OPContractsManagerStandardValidator_TestInit {
+    /// @notice Tests that the ETHLockbox feature must be enabled.
+    function test_validate_ethLockboxFeatureDisabled_succeeds() public {
+        vm.mockCall(
+            address(systemConfig),
+            abi.encodeCall(ISystemConfig.isFeatureEnabled, (Features.ETH_LOCKBOX)),
+            abi.encode(false)
+        );
+        assertEq("LOCKBOX-00", _validate(true));
+    }
+
+    /// @notice Tests that the portal must reference an ETHLockbox.
+    function test_validate_ethLockboxMissing_succeeds() public {
+        vm.mockCall(address(optimismPortal2), abi.encodeCall(IOptimismPortal2.ethLockbox, ()), abi.encode(address(0)));
+        assertEq("PDDG-DWETH-50,PDDG-ANCHORP-40,CKDG-DWETH-50,CKDG-ANCHORP-40,LOCKBOX-05", _validate(true));
+    }
+
     /// @notice Tests that the validate function successfully returns the right error when the
     ///         ETHLockbox version is invalid.
     function test_validate_ethLockboxInvalidVersion_succeeds() public {
         vm.mockCall(address(ethLockbox), abi.encodeCall(ISemver.version, ()), abi.encode("0.0.0"));
 
-        if (isSysFeatureEnabled(Features.ETH_LOCKBOX)) {
-            assertEq("LOCKBOX-10", _validate(true));
-        } else {
-            assertEq("", _validate(true));
-        }
+        assertEq("LOCKBOX-10", _validate(true));
     }
 
     /// @notice Tests that the validate function successfully returns the right error when the
@@ -889,11 +907,7 @@ contract OPContractsManagerStandardValidator_ETHLockbox_Test is OPContractsManag
             abi.encode(address(0xbad))
         );
 
-        if (isSysFeatureEnabled(Features.ETH_LOCKBOX)) {
-            assertEq("LOCKBOX-20", _validate(true));
-        } else {
-            assertEq("", _validate(true));
-        }
+        assertEq("LOCKBOX-20", _validate(true));
     }
 
     /// @notice Tests that the validate function successfully returns the right error when the
@@ -903,23 +917,15 @@ contract OPContractsManagerStandardValidator_ETHLockbox_Test is OPContractsManag
             address(ethLockbox), abi.encodeCall(IProxyAdminOwnedBase.proxyAdmin, ()), abi.encode(address(0xbad))
         );
 
-        if (isSysFeatureEnabled(Features.ETH_LOCKBOX)) {
-            assertEq("LOCKBOX-30", _validate(true));
-        } else {
-            assertEq("", _validate(true));
-        }
+        assertEq("LOCKBOX-30", _validate(true));
     }
 
     /// @notice Tests that the validate function successfully returns the right error when the
-    ///         ETHLockbox systemConfig is invalid.
-    function test_validate_ethLockboxInvalidSystemConfig_succeeds() public {
-        vm.mockCall(address(ethLockbox), abi.encodeCall(IETHLockbox.systemConfig, ()), abi.encode(address(0xbad)));
+    ///         ETHLockbox superchainConfig is invalid.
+    function test_validate_ethLockboxInvalidSuperchainConfig_succeeds() public {
+        vm.mockCall(address(ethLockbox), abi.encodeCall(IETHLockbox.superchainConfig, ()), abi.encode(address(0xbad)));
 
-        if (isSysFeatureEnabled(Features.ETH_LOCKBOX)) {
-            assertEq("LOCKBOX-40", _validate(true));
-        } else {
-            assertEq("", _validate(true));
-        }
+        assertEq("LOCKBOX-40", _validate(true));
     }
 
     /// @notice Tests that the validate function successfully returns the right error when the
@@ -929,11 +935,7 @@ contract OPContractsManagerStandardValidator_ETHLockbox_Test is OPContractsManag
             address(ethLockbox), abi.encodeCall(IETHLockbox.authorizedPortals, (optimismPortal2)), abi.encode(false)
         );
 
-        if (isSysFeatureEnabled(Features.ETH_LOCKBOX)) {
-            assertEq("LOCKBOX-50", _validate(true));
-        } else {
-            assertEq("", _validate(true));
-        }
+        assertEq("LOCKBOX-50", _validate(true));
     }
 }
 
@@ -1132,7 +1134,9 @@ contract OPContractsManagerStandardValidator_PermissionedDisputeGame_Test is
             abi.encode(Hash.wrap(bytes32(uint256(0x123))), uint256(123))
         );
         vm.mockCall(badASR, abi.encodeCall(IAnchorStateRegistry.disputeGameFactory, ()), abi.encode(dgf));
-        vm.mockCall(badASR, abi.encodeCall(IAnchorStateRegistry.systemConfig, ()), abi.encode(sysCfg));
+        vm.mockCall(
+            badASR, abi.encodeCall(IAnchorStateRegistry.ethLockbox, ()), abi.encode(expectedETHLockboxFor(sysCfg))
+        );
         vm.mockCall(badASR, abi.encodeCall(IProxyAdminOwnedBase.proxyAdmin, ()), abi.encode(proxyAdmin));
         vm.mockCall(badASR, abi.encodeCall(IAnchorStateRegistry.retirementTimestamp, ()), abi.encode(uint64(100)));
 
@@ -1158,7 +1162,7 @@ contract OPContractsManagerStandardValidator_PermissionedDisputeGame_Test is
         vm.mockCall(
             badWeth, abi.encodeCall(IDelayedWETH.delay, ()), abi.encode(standardValidator.withdrawalDelaySeconds())
         );
-        vm.mockCall(badWeth, abi.encodeCall(IDelayedWETH.systemConfig, ()), abi.encode(sysCfg));
+        vm.mockCall(badWeth, abi.encodeCall(IDelayedWETH.ethLockbox, ()), abi.encode(expectedETHLockboxFor(sysCfg)));
         vm.mockCall(badWeth, abi.encodeCall(IProxyAdminOwnedBase.proxyAdmin, ()), abi.encode(proxyAdmin));
 
         assertEq("PDDG-DWETH-10,PDDG-DWETH-20,PDDG-DWETH-70", _validate(true));
@@ -1305,11 +1309,11 @@ contract OPContractsManagerStandardValidator_AnchorStateRegistry_Test is
     }
 
     /// @notice Tests that the validate function successfully returns the right error when the
-    ///         AnchorStateRegistry systemConfig is invalid.
-    function test_validate_anchorStateRegistryInvalidSystemConfig_succeeds() public {
+    ///         AnchorStateRegistry ETHLockbox is invalid.
+    function test_validate_anchorStateRegistryInvalidETHLockbox_succeeds() public {
         vm.mockCall(
             address(anchorStateRegistry),
-            abi.encodeCall(IAnchorStateRegistry.systemConfig, ()),
+            abi.encodeCall(IAnchorStateRegistry.ethLockbox, ()),
             abi.encode(address(0xbad))
         );
         assertEq("PDDG-ANCHORP-40,CKDG-ANCHORP-40", _validate(true));
@@ -1402,9 +1406,9 @@ contract OPContractsManagerStandardValidator_DelayedWETH_Test is OPContractsMana
     }
 
     /// @notice Tests that the validate function successfully returns the right error when the
-    ///         DelayedWETH systemConfig is invalid.
-    function test_validate_delayedWETHInvalidSystemConfig_succeeds() public {
-        vm.mockCall(address(delayedWeth), abi.encodeCall(IDelayedWETH.systemConfig, ()), abi.encode(address(0xbad)));
+    ///         DelayedWETH ETHLockbox is invalid.
+    function test_validate_delayedWETHInvalidETHLockbox_succeeds() public {
+        vm.mockCall(address(delayedWeth), abi.encodeCall(IDelayedWETH.ethLockbox, ()), abi.encode(address(0xbad)));
         assertEq("PDDG-DWETH-50,CKDG-DWETH-50", _validate(true));
     }
 
@@ -1528,7 +1532,9 @@ contract OPContractsManagerStandardValidator_FaultDisputeGame_Test is OPContract
             abi.encode(Hash.wrap(bytes32(uint256(0x123))), uint256(123))
         );
         vm.mockCall(badASR, abi.encodeCall(IAnchorStateRegistry.disputeGameFactory, ()), abi.encode(dgf));
-        vm.mockCall(badASR, abi.encodeCall(IAnchorStateRegistry.systemConfig, ()), abi.encode(sysCfg));
+        vm.mockCall(
+            badASR, abi.encodeCall(IAnchorStateRegistry.ethLockbox, ()), abi.encode(expectedETHLockboxFor(sysCfg))
+        );
         vm.mockCall(badASR, abi.encodeCall(IProxyAdminOwnedBase.proxyAdmin, ()), abi.encode(proxyAdmin));
         vm.mockCall(badASR, abi.encodeCall(IAnchorStateRegistry.retirementTimestamp, ()), abi.encode(uint64(100)));
     }
@@ -1557,7 +1563,7 @@ contract OPContractsManagerStandardValidator_FaultDisputeGame_Test is OPContract
         vm.mockCall(
             badWeth, abi.encodeCall(IDelayedWETH.delay, ()), abi.encode(standardValidator.withdrawalDelaySeconds())
         );
-        vm.mockCall(badWeth, abi.encodeCall(IDelayedWETH.systemConfig, ()), abi.encode(sysCfg));
+        vm.mockCall(badWeth, abi.encodeCall(IDelayedWETH.ethLockbox, ()), abi.encode(expectedETHLockboxFor(sysCfg)));
         vm.mockCall(badWeth, abi.encodeCall(IProxyAdminOwnedBase.proxyAdmin, ()), abi.encode(proxyAdmin));
     }
 
@@ -1885,10 +1891,26 @@ abstract contract OPContractsManagerStandardValidator_SuperMode_TestInit is Supe
 contract OPContractsManagerStandardValidator_SuperModeCoreValidation_Test is
     OPContractsManagerStandardValidator_SuperMode_TestInit
 {
+    /// @notice Tests that the ETHLockbox feature must be enabled.
+    function test_validate_ethLockboxFeatureDisabled_succeeds() public {
+        vm.mockCall(
+            address(systemConfig),
+            abi.encodeCall(ISystemConfig.isFeatureEnabled, (Features.ETH_LOCKBOX)),
+            abi.encode(false)
+        );
+        assertEq("LOCKBOX-00", _validate(true));
+    }
+
     /// @notice Tests that the validate function succeeds in super mode with all games configured.
     function test_validate_succeeds() public view {
         string memory errors = _validate(false);
         assertEq(errors, "");
+    }
+
+    /// @notice Tests that the portal must reference an ETHLockbox.
+    function test_validate_ethLockboxMissing_succeeds() public {
+        vm.mockCall(address(optimismPortal2), abi.encodeCall(IOptimismPortal2.ethLockbox, ()), abi.encode(address(0)));
+        assertEq("SPDG-ANCHORP-40,SCKDG-DWETH-50,SCKDG-ANCHORP-40,LOCKBOX-05", _validate(true));
     }
 
     /// @notice Tests that the validate function returns SYSCON-140 when the SystemConfig l2ChainId
@@ -2050,7 +2072,9 @@ contract OPContractsManagerStandardValidator_SuperPermissionedDisputeGame_Test i
             abi.encode(Hash.wrap(bytes32(uint256(0x123))), uint256(123))
         );
         vm.mockCall(badASR, abi.encodeCall(IAnchorStateRegistry.disputeGameFactory, ()), abi.encode(dgf));
-        vm.mockCall(badASR, abi.encodeCall(IAnchorStateRegistry.systemConfig, ()), abi.encode(sysCfg));
+        vm.mockCall(
+            badASR, abi.encodeCall(IAnchorStateRegistry.ethLockbox, ()), abi.encode(expectedETHLockboxFor(sysCfg))
+        );
         vm.mockCall(badASR, abi.encodeCall(IProxyAdminOwnedBase.proxyAdmin, ()), abi.encode(proxyAdmin));
         vm.mockCall(badASR, abi.encodeCall(IAnchorStateRegistry.retirementTimestamp, ()), abi.encode(uint64(100)));
 
@@ -2572,20 +2596,38 @@ contract OPContractsManagerStandardValidator_ValidateMigratedChain_Test is
 {
     /// @notice Tests that validateMigratedChain succeeds with no errors on a valid post-migration state.
     function test_validateMigratedChain_succeeds() public view {
-        ISystemConfig[] memory chains = new ISystemConfig[](2);
-        chains[0] = chainContracts1.systemConfig;
-        chains[1] = chainContracts2.systemConfig;
-        string memory errors = standardValidator.validateMigratedChain(
-            IOPContractsManagerMigrationValidator.MigrationValidationInput({
-                dgf: sharedDGF,
-                chainSystemConfigs: chains,
-                cannonPrestate: cannonPrestate.raw(),
-                cannonKonaPrestate: cannonKonaPrestate.raw(),
-                proposer: proposer
-            }),
-            false
-        );
+        string memory errors = standardValidator.validateMigratedChain(_defaultInput(), false);
         assertEq(errors, "");
+    }
+
+    /// @notice Tests that a coherent but unexpected pause authority is rejected by both entrypoints:
+    ///         the lockbox and every chain are compared to the validator's SuperchainConfig, so a
+    ///         set that agrees with itself but not with the validator fails on each contract.
+    function test_validateMigratedChain_wrongSuperchainConfig_reverts() public {
+        address wrongConfig = makeAddr("wrongSuperchainConfig");
+        assertNotEq(address(standardValidator.superchainConfig()), wrongConfig);
+        vm.mockCall(address(sharedLockbox), abi.encodeCall(IETHLockbox.superchainConfig, ()), abi.encode(wrongConfig));
+        vm.mockCall(
+            address(chainContracts1.systemConfig),
+            abi.encodeCall(ISystemConfig.superchainConfig, ()),
+            abi.encode(wrongConfig)
+        );
+        vm.mockCall(
+            address(chainContracts2.systemConfig),
+            abi.encodeCall(ISystemConfig.superchainConfig, ()),
+            abi.encode(wrongConfig)
+        );
+
+        string memory expected = "MIG-SLOCKBOX-40,MIG-CHAIN-0-130,MIG-CHAIN-1-130";
+        IOPContractsManagerMigrationValidator.MigrationValidationInput memory input = _migrationInput();
+        IOPContractsManagerStandardValidator.ValidationOverrides memory overrides;
+        assertEq(standardValidator.validateMigratedChain(input, true), expected);
+        assertEq(standardValidator.validateMigratedChainWithOverrides(input, true, overrides), expected);
+
+        vm.expectRevert(bytes(string.concat("OPContractsManagerMigrationValidator: ", expected)));
+        standardValidator.validateMigratedChain(input, false);
+        vm.expectRevert(bytes(string.concat("OPContractsManagerMigrationValidator: ", expected)));
+        standardValidator.validateMigratedChainWithOverrides(input, false, overrides);
     }
 
     /// @notice Helper to build migration input with 2 chains.
@@ -2594,16 +2636,7 @@ contract OPContractsManagerStandardValidator_ValidateMigratedChain_Test is
         view
         returns (IOPContractsManagerMigrationValidator.MigrationValidationInput memory)
     {
-        ISystemConfig[] memory chains = new ISystemConfig[](2);
-        chains[0] = chainContracts1.systemConfig;
-        chains[1] = chainContracts2.systemConfig;
-        return IOPContractsManagerMigrationValidator.MigrationValidationInput({
-            dgf: sharedDGF,
-            chainSystemConfigs: chains,
-            cannonPrestate: cannonPrestate.raw(),
-            cannonKonaPrestate: cannonKonaPrestate.raw(),
-            proposer: proposer
-        });
+        return _defaultInput();
     }
 
     /// @notice Tests that validateMigratedChainWithOverrides with l1PAOMultisig override succeeds

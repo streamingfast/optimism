@@ -23,6 +23,7 @@ zkVM programs that execute inside the SP1 prover:
 
 Supporting libraries for the SP1 fault proof system:
 
+- **`build-info`**: Compile-time build marker embedding the monorepo commit into both guests
 - **`client`**: Client-side utilities and types for witness execution in the zkVM
 - **`elfs`**: Runtime loading of compiled ELF binaries
 - **`ethereum/client`**: Ethereum-specific client-side data availability utilities
@@ -36,6 +37,8 @@ Supporting libraries for the SP1 fault proof system:
 - **`super-range-executor`**: Witness synthesis and execution engine for the super-root
   programs; used as a library by the proposer and as the `kona-sp1-super-range-executor`
   validity-checker binary in acceptance tests
+- **`zkvm-canary`**: The `kona-zkvm-canary` service, which continuously executes both
+  `super-range` modes against finalized live-network snapshots without producing proofs
 
 ### ELF Binaries (`elf/`)
 
@@ -58,6 +61,34 @@ artifacts at runtime from `KONA_SP1_ELF_DIR`; a missing or empty artifact fails 
 infrastructure error. Release automation will eventually pin per-version vkeys from the generated
 manifest into `superchain-registry/validation/standard/standard-prestates.toml` and verify
 reproducible builds.
+
+#### Build provenance
+
+Both guests embed the commit they were built from, so a guest ELF identifies its own source
+without a manifest, a lookup table, or executing it:
+
+```bash
+grep -aoE 'KONA_SP1_BUILD\{git_sha=[0-9A-Za-z._-]*\}' elf/super-aggregation-elf | sort -u
+```
+
+The guests also print the marker at startup, which surfaces wherever the executor runs it —
+`kona-sp1-super-range-executor` locally and in the acceptance smoke tests, where a bare
+`println!` arrives as a WARN `Invalid JSON` line carrying the marker. Proving on the Succinct
+network sends guest output to the remote prover, so the ELF scan is the reliable path there.
+
+The commit is part of the compiled image, so it is part of the vkey: two builds from different
+commits produce different vkeys even when the program logic is identical. Range proofs are
+verified against the `SUPER_RANGE_VKEY` embedded in `super-aggregation`, so a range prover and an
+aggregator must come from the same commit, not merely the same code. The marker is recoverable,
+not attested: it records what an honest build embedded and proves nothing against a rewritten
+artifact.
+
+`just build-elfs` takes the commit from `git rev-parse HEAD`, resolved once per build so both
+guests agree. It appends `-dirty` when tracked files are modified and `-custom` for a
+`KONA_CUSTOM_CONFIGS_DIR` build, whose guest is compiled from configs the commit does not
+describe. Builds outside the justfile record `unknown`.
+Each build recipe checks its own ELF; CI (`kona-build-sp1-elfs`) additionally pins the natively
+built ELFs to the commit under test.
 
 Custom chains and devnets can compile separate SP1 artifacts with custom kona
 registry inputs:
@@ -138,6 +169,21 @@ super-root `ZKDisputeGame` (game type 10) end to end:
 3. **Resolve and claim**: resolves finished games and claims bonds (including the
    challenger bond earned by proving).
 
+### Anchor validation
+
+At startup, the proposer waits until the registered anchor root matches a trusted
+supernode response at the exact anchor timestamp. Registry and anchor reads use
+one L1 block hash.
+
+A zero root, a timestamp exceeding `u64`, or a trusted mismatch produces an ERROR
+log. Missing data, RPC errors, and untrusted responses produce WARN logs. Startup
+also logs its first validation failure at ERROR, then retries.
+
+Correct the registry or restore access to trusted, matching history; startup
+resumes without a restart. Timestamp zero has no fallback if the RPC rejects it.
+Normal proposal scheduling and submission retain their existing retry behavior;
+anchor validation is not repeated after startup.
+
 ### Ownership (which games it defends)
 
 Defense, resolution, and bond claims use prestate-based ownership. The proposer
@@ -162,6 +208,13 @@ proposer loses the ability to defend, resolve, and claim those games.
   prestate and remove its games from the owned set). The registered prestate's
   keys are verified BEFORE any game is created on it, so the proposer never
   bonds a game it has not proven it can defend.
+  The proposer also reads the verifier behind each `SP1PlonkAdapter` it is about to rely on
+  (`sp1Verifier().VERIFIER_HASH()`) and compares it with `sha256(sp1_verifier::PLONK_VK_BYTES)`,
+  the selector the linked sp1-sdk puts on every proof. The registered adapter is checked
+  every creation cycle, so a mismatched registration pauses creation; each game's own
+  immutable verifier is checked before a proof is requested, so a game on another circuit is
+  given up without proving spend. The ERROR log names both hashes and the SDK circuit; the fix
+  is a verifier re-pin or an SDK change. Defense of games on a compatible verifier continues.
 - `KONA_SP1_PROPOSER_PROOF_PROVIDER=mock`: dev-only. Runs the full pipeline natively (witness
   collection computes the real range/consolidation outputs and the aggregation
   inputs are validated), then submits placeholder proof bytes. Only a deployment
@@ -219,27 +272,60 @@ sent together may count as one request.
 
 ### Operator alarms
 
-`kona_sp1_proposer_game_proving_error` counts failed proving tasks. A sustained
-rate needs investigation because identity changes and retryable terminal
-outcomes can purchase replacement proofs.
-`kona_sp1_proposer_proving_timeout_error` means a polling attempt exceeded its
-client-side wait; the submitted request ID remains available to the next retry.
-`kona_sp1_proposer_game_unprovable` counts games given up as permanently
-unprovable. A proving task that never completes holds its capacity slot and its
-game's dedup slot, so watch `kona_sp1_proposer_proving_duration_seconds` and the
-per-tick task-stats log.
+The following metrics support availability, funding, and defense-deadline alerts.
+Names below use the `kona_sp1_proposer_` prefix.
+
+| Metric | Type | Meaning |
+|---|---|---|
+| `up` | Gauge | `1` after the process starts. This does not imply chain-dependent startup validation has completed. Use Prometheus scrape availability to detect process loss. |
+| `signer_balance_eth` | Gauge | L1 transaction signer's balance in ETH. |
+| `prove_balance` | Gauge | Configured SP1 network account's spendable balance in PROVE, not the signer's ERC-20 wallet balance. Absent in mock mode. |
+| `deadline_passed_total` | Counter | Missed game windows observed by this process, with `window="defense"` or `window="fast_finality"`. Defense expiry and missed fast-finality acceleration have different consequences. |
+| `defense_deadline_remaining_seconds` | Gauge | Minimum observed defense deadline minus L1 block time, including queued and active games. Zero is the deadline boundary; negative values indicate expiry. |
+
+Balances refresh every 15 seconds. Failed balance reads return `NaN`
+without blocking other metrics. Deadline metrics update during game sync
+using the confirmed L1 timestamp.
+
+Deadline checks cover discovered games with eligible ancestry that the proposer
+owns or created. Positive infinity means no outstanding defense. `NaN` means
+the first sync or game validation is incomplete, or sync reads failed.
+
+Each expired window counts once while the game remains cached. Restarts or
+eviction can cause recounts; gaps between observations can miss events.
+A missed fast-finality window does not by itself mean a lost game.
+
+Set defense alerts early enough to allow proving, L1 inclusion, and operator
+response. Use the error metrics below for diagnosis, not separate alerts.
+
+`kona_sp1_proposer_game_proving_error` counts failed attempts; retries may buy
+replacement proofs. `kona_sp1_proposer_proving_timeout_error` means polling
+timed out; the next attempt can reuse the request.
+`kona_sp1_proposer_game_unprovable` counts games the proposer cannot prove.
+
+`kona_sp1_proposer_proving_duration_seconds` records only successful runs,
+including the L1 transaction path. Use the task-stats log to investigate stuck work.
 
 ### Environment
 
 All proposer-owned variables use the `KONA_SP1_PROPOSER_` prefix.
 
+For a standard network, set `--network <name>` or `KONA_SP1_PROPOSER_NETWORK`
+to a predefined network name recognized by OP Stack services, such as `op-mainnet` or
+`op-sepolia`. The command-line
+value overrides the environment value. Custom deployments can set
+`KONA_SP1_PROPOSER_FACTORY_ADDRESS`; an explicit address overrides network lookup. Startup fails
+when neither source is set, the network name is unknown, or the selected registry chain has no
+`DisputeGameFactory` address.
+
 Required core configuration:
 
 | Variable | Purpose |
 |---|---|
-| `KONA_SP1_PROPOSER_L1_RPC` | L1 execution RPC |
+| `KONA_SP1_PROPOSER_L1_RPC` | L1 execution RPC; must support standard JSON-RPC batch requests (current proposer game-state batches contain at most 4 `eth_call` entries) |
 | `KONA_SP1_PROPOSER_SUPERROOT_RPCS` | op-supernode or single-chain op-node RPCs serving `superroot_atTimestamp`. Multiple comma-separated RPCs can be provided for redundancy |
-| `KONA_SP1_PROPOSER_FACTORY_ADDRESS` | `DisputeGameFactory` address |
+| `KONA_SP1_PROPOSER_NETWORK` | Predefined network name recognized by OP Stack services, such as `op-mainnet`; alternative to `KONA_SP1_PROPOSER_FACTORY_ADDRESS` |
+| `KONA_SP1_PROPOSER_FACTORY_ADDRESS` | Explicit `DisputeGameFactory` address; required when no network is selected and overrides network lookup |
 | `KONA_SP1_PROPOSER_PRESTATES_URL` | prestate artifact directory (`<vkey>.agg.bin.gz` + `<vkey>.range.bin.gz`) |
 | `KONA_SP1_PROPOSER_PROOF_PROVIDER` | `network` or `mock`; no default |
 | `KONA_SP1_PROPOSER_L1_BEACON_RPC` | L1 beacon API (blob sidecars for derivation witnesses) |
@@ -266,7 +352,8 @@ Optional core and operational configuration:
 | `KONA_SP1_PROPOSER_FAST_FINALITY_MODE` | prove signer-created owned games while unchallenged (default `false`) |
 | `KONA_SP1_PROPOSER_FAST_FINALITY_PROVING_LIMIT` | total in-flight proving tasks before creation pauses (default `1`) |
 
-SP1 network configuration applies when `KONA_SP1_PROPOSER_PROOF_PROVIDER=network`:
+SP1 network configuration applies when `KONA_SP1_PROPOSER_PROOF_PROVIDER=network`.
+`KONA_SP1_PROPOSER_NETWORK_CALLS_TIMEOUT` also bounds metric observations in mock mode.
 
 | Variable | Purpose |
 |---|---|
@@ -276,7 +363,7 @@ SP1 network configuration applies when `KONA_SP1_PROPOSER_PROOF_PROVIDER=network
 | `KONA_SP1_PROPOSER_RANGE_PROOF_STRATEGY` | range fulfillment strategy (default `auction`) |
 | `KONA_SP1_PROPOSER_AGG_PROOF_STRATEGY` | aggregation fulfillment strategy (default `auction`) |
 | `KONA_SP1_PROPOSER_SP1_TIMEOUT_SECONDS` | per-proof request deadline and client wait (default `7200`) |
-| `KONA_SP1_PROPOSER_NETWORK_CALLS_TIMEOUT` | individual network-call timeout (default `15`) |
+| `KONA_SP1_PROPOSER_NETWORK_CALLS_TIMEOUT` | SP1 API and metric observation timeout, including L1 balance and super-root queries (default `15` seconds) |
 | `KONA_SP1_PROPOSER_AUCTION_TIMEOUT` | unassigned mainnet request timeout (default `300`) |
 | `KONA_SP1_PROPOSER_RANGE_CYCLE_LIMIT` | range request cycle limit (default `1e12`) |
 | `KONA_SP1_PROPOSER_RANGE_GAS_LIMIT` | range request gas limit (default `200000000000`) |
@@ -355,6 +442,167 @@ Concurrency interaction:
 | fast-finality tasks in flight | never count against `KONA_SP1_PROPOSER_MAX_CONCURRENT_DEFENSE_TASKS` |
 | game challenged while a fast-finality proof is in flight | the proof stays valid; per-game dedup prevents a second task |
 | a fast-finality proof keeps failing at the limit | creation stays paused until it succeeds or is classified unprovable; watch `kona_sp1_proposer_game_proving_error` |
+
+## Live execution canary (`kona-zkvm-canary`)
+
+`kona-zkvm-canary` checks that the published `super-range` guest agrees with a finalized,
+L1-pinned live-network view. One process owns one network and one artifact URL.
+It selects a consecutive finalized span, runs range mode and consolidation mode sequentially,
+and classifies their results. The L1 pin is the earlier of the supernode's fully processed block
+(`CurrentL1 - 1`) and L1's `finalized` block; a snapshot whose `required_l1` is above that chosen
+pin is an input error. Finalized supernode responses are assumed immutable for a timestamp. An
+identical successful fingerprint is not re-executed; a correctness failure receives one
+confirmation attempt. The next selection is scheduled only after the prior attempt and its
+cadence plus bounded jitter have completed.
+
+The canary always uses SP1 CPU `execute` mode. This runs the real RISC-V ELF and returns an
+`ExecutionReport`, but it never invokes a proving API, submits work to the Succinct Prover Network,
+or creates proof bytes. This differs from the proposer's `mock` provider, which does not execute an
+ELF and submits placeholder proof bytes to a development verifier. It also differs from the
+one-shot executor's `--native-core` mode, which replays witnesses without the SP1 emulator. The
+canary exposes neither a mock mode nor a native-core switch.
+
+### Artifact identity and startup
+
+`KONA_ZKVM_CANARY_PRESTATES_URL` is the direct URL of a gzip-compressed `super-range` ELF. Startup
+downloads and decompresses it in memory, computes the decompressed ELF's SHA-256 digest, and
+derives its SP1 verification-key hash. Each scheduler cycle refetches the same URL. Unchanged bytes
+reuse the existing SP1 identity; changed bytes derive a new identity and produce a new attempt
+fingerprint. The URL may therefore name either an immutable release or a moving artifact such as
+`develop.bin.gz`. The aggregation ELF is not downloaded. The service image contains only the host
+binary, not a locally generated guest ELF.
+
+Startup is fail-fast and ordered: parse and validate all configuration, load the artifact and
+derive its identity, bind the host-utils metrics server, register canary metrics, then emit the
+structured `kona-zkvm-canary started` log. Configuration or artifact failures return non-zero
+before a metrics listener is bound. Host-utils serves `/health` unchanged. There is no `/ready`
+endpoint or ready gauge: a scrapeable process already holds a usable SP1 artifact.
+
+### Configuration
+
+All canary-owned variables use the `KONA_ZKVM_CANARY_` prefix. RPC URLs must use HTTP or HTTPS and
+must not contain user information, query parameters, or fragments. Production artifact URLs must
+use HTTPS with the same restrictions and redirects disabled. A `file://` artifact URL is
+accepted only with `--once`. Numeric limits marked non-zero fail validation when set to zero.
+
+Required configuration:
+
+| Variable | Purpose |
+|---|---|
+| `KONA_ZKVM_CANARY_SUPERROOT_RPC` | op-supernode endpoint serving `superroot_atTimestamp` |
+| `KONA_ZKVM_CANARY_L1_RPC` | L1 execution JSON-RPC endpoint used to pin and canonicalize block identities |
+| `KONA_ZKVM_CANARY_L1_BEACON_RPC` | L1 beacon API endpoint used for blob sidecars during witness collection |
+| `KONA_ZKVM_CANARY_L2_RPCS` | Comma-separated `<chain-id>=<http(s)-url>` L2 execution endpoints; decimal and `0x` chain IDs are accepted and duplicates are rejected |
+| `KONA_ZKVM_CANARY_PRESTATES_URL` | Direct gzip-compressed `super-range` ELF URL; `file://` is diagnostic and `--once` only |
+| `KONA_ZKVM_CANARY_GUEST_CYCLE_LIMIT` | Non-zero maximum cycles for each range or consolidation guest execution; no default |
+
+Optional execution, scheduling, and input limits:
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `KONA_ZKVM_CANARY_ROLLUP_CONFIG_PATHS` | registry | Comma-separated rollup-config JSON files with exact L2 endpoint coverage |
+| `KONA_ZKVM_CANARY_L1_CONFIG_PATH` | registry | L1 chain-config JSON override |
+| `KONA_ZKVM_CANARY_DEPENDENCY_SET_PATH` | registry | Dependency-set JSON override with exact L2 endpoint coverage |
+| `KONA_ZKVM_CANARY_FINALIZED_SPAN` | `1` | Consecutive finalized timestamps per attempt; range `1..=128` |
+| `KONA_ZKVM_CANARY_CADENCE_SECONDS` | `300` | Non-zero wait after an attempt completes |
+| `KONA_ZKVM_CANARY_JITTER_SECONDS` | `min(30, cadence)` | Maximum additional wait; zero is allowed and the value cannot exceed cadence |
+| `KONA_ZKVM_CANARY_ATTEMPT_DEADLINE_SECONDS` | `10800` | Non-zero deadline for cancellable attempt stages |
+| `KONA_ZKVM_CANARY_RPC_REQUEST_TIMEOUT_SECONDS` | `30` | Non-zero deadline for each parent JSON-RPC request |
+| `KONA_ZKVM_CANARY_ARTIFACT_REQUEST_TIMEOUT_SECONDS` | `60` | Non-zero whole-request artifact deadline |
+| `KONA_ZKVM_CANARY_MAX_PARENT_RESPONSE_BYTES` | `4194304` | Non-zero maximum parent JSON-RPC response body |
+| `KONA_ZKVM_CANARY_MAX_PARENT_RESPONSE_ENTRIES` | `256` | Non-zero maximum parent response entries and configured chains; maximum `256` |
+| `KONA_ZKVM_CANARY_MEMORY_LIMIT` | `25769803776` | SP1 emulator accounted-memory limit in bytes; not a process RSS ceiling |
+| `KONA_ZKVM_CANARY_METRICS_PORT` | disabled | `disabled`, empty, or any numeric zero disables metrics; `auto` binds an ephemeral port; a non-zero port binds that port on all interfaces |
+
+Optional structured logging configuration:
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `KONA_ZKVM_CANARY_LOG_FORMAT` | `pretty` | `pretty` or structured `json` logs |
+
+The logger also observes `RUST_LOG` and `NO_COLOR`. TLS and HTTP clients may observe the standard
+certificate and proxy variables. `KONA_SP1_ELF_DIR` is not a canary input: the canary uses only its
+downloaded in-memory artifact. `TRACE_FILE` must be unset; startup rejects it because SP1's
+cycle-tracker feature can otherwise persist a profile, while the canary has a no-file-output
+contract.
+
+### Execution bounds and termination
+
+The bounds serve different purposes:
+
+- `GUEST_CYCLE_LIMIT` is applied independently to range and consolidation execution. SP1 stops an
+  execution that exceeds it and releases that work; the run outcome is `cycle_limit_exceeded`, not
+  a guest rejection or divergence.
+- `MEMORY_LIMIT` is passed to the in-process SP1 CPU emulator and bounds memory tracked by its
+  internal accounting. Allocator overhead and other process memory are outside that accounting, so
+  this is not a hard RSS ceiling. The process metrics below expose observed resident and virtual
+  memory; the orchestrator or cgroup remains the hard process-memory backstop.
+- `ATTEMPT_DEADLINE_SECONDS` covers artifact refresh, selection, and witness collection. It does
+  not interrupt SP1 setup or execution: SP1 uses blocking work that Tokio cannot cancel. A setup
+  that finishes after the deadline records `timeout` before snapshot selection begins.
+
+If the emulator wedges beyond the cycle and memory bounds, or the process is killed for memory,
+the orchestrator must restart it. `SIGINT` and `SIGTERM` stop all further scheduling and exit the
+process. A signal received during artifact refresh or SP1 execution abandons that work by terminating
+the process; the service does not claim to cancel the in-flight blocking task.
+
+### Metrics
+
+When enabled, host-utils serves Prometheus samples and updates process metrics every 750 ms. The
+canary metric namespace is `kona_zkvm_canary`:
+
+| Metric | Meaning |
+|---|---|
+| `kona_zkvm_canary_up` | `1` after metrics registration with a loaded SP1 artifact; `0` when one-shot operation completes normally |
+| `kona_zkvm_canary_scheduler_heartbeat_timestamp_seconds` | Unix time of the latest selection cycle |
+| `kona_zkvm_canary_run_active` | Whether the one sequential attempt is active |
+| `kona_zkvm_canary_last_attempt_timestamp_seconds` / `kona_zkvm_canary_last_success_timestamp_seconds` | Completion time of the latest attempt / valid attempt; zero means unknown |
+| `kona_zkvm_canary_last_attempted_target_timestamp` / `kona_zkvm_canary_last_successful_target_timestamp` | Latest attempted / valid finalized target; zero means unknown |
+| `kona_zkvm_canary_consecutive_failures` | Consecutive non-valid terminal outcomes |
+| `kona_zkvm_canary_runs_total{outcome}` | Attempt count by `valid`, `guest_rejected`, `output_mismatch`, `input_error`, `cycle_limit_exceeded`, or `timeout` |
+| `kona_zkvm_canary_last_run_duration_seconds` | Total duration of the latest attempt |
+| `kona_zkvm_canary_last_input_selection_duration_seconds` | Canonical snapshot selection duration of the latest attempt |
+| `kona_zkvm_canary_last_stage_witness_duration_seconds{mode}` / `kona_zkvm_canary_last_stage_execute_duration_seconds{mode}` | Latest witness and SP1 execution duration for `range` or `consolidation` |
+| `kona_zkvm_canary_selected_span_length` / `kona_zkvm_canary_selected_chain_count` | Timestamp and chain counts in the latest selected input |
+| `kona_zkvm_canary_executed_l2_gas` | Total gas used by L2 blocks in the latest selected span with a range PGU, summed across chains; an absent PGU leaves the prior gauge unchanged |
+| `kona_zkvm_canary_finalized_target_lag_seconds` | Wall-clock lag of the latest attempted finalized target |
+| `kona_zkvm_canary_report_target_timestamp{mode}` | Target associated with the latest completed SP1 report for the mode |
+| `kona_zkvm_canary_report_pgu{mode}` | Latest normalized SP1 proving-gas-unit estimate; an absent SP1 value leaves the prior gauge unchanged |
+| `kona_zkvm_canary_report_instructions{mode}` / `kona_zkvm_canary_report_syscalls{mode}` | Latest instruction and syscall totals |
+| `kona_zkvm_canary_report_record_bytes{mode}` | Latest estimated SP1 execution-record size; not process memory |
+| `kona_zkvm_canary_report_exit_code{mode}` | Latest SP1 guest exit code |
+
+Host-utils additionally exports unprefixed process samples including
+`process_resident_memory_bytes`, `process_virtual_memory_bytes`,
+`process_virtual_memory_max_bytes`, `process_cpu_seconds_total`, file-descriptor counts, thread
+count, and process start time where the platform supports them. Because both guest modes run in
+the service process, resident-memory samples include SP1 execution rather than a child process.
+Metric labels never contain RPC URLs, run IDs, roots, chain IDs, error strings, opcode names, or
+syscall names. Per-phase cycle and invocation totals remain available in the bounded
+`range_report` and `consolidation_report` fields of each structured attempt log; they are not
+exported as Prometheus series.
+
+### One-shot diagnostics
+
+`--once` calls the same `Runner::run_one` selection and execution path as the loop. It emits the
+terminal outcome and both bounded range/consolidation report summaries as structured fields, then
+exits `0` for `valid`, `1` for `guest_rejected` or `output_mismatch`, and `2` for every other
+outcome. It accepts no result path and writes no artifact, witness, report, or result file. For a
+local artifact:
+
+```bash
+KONA_ZKVM_CANARY_PRESTATES_URL="file:///absolute/path/to/develop.bin.gz" \
+KONA_ZKVM_CANARY_GUEST_CYCLE_LIMIT="..." \
+KONA_ZKVM_CANARY_SUPERROOT_RPC="http://127.0.0.1:9545" \
+KONA_ZKVM_CANARY_L1_RPC="http://127.0.0.1:8545" \
+KONA_ZKVM_CANARY_L1_BEACON_RPC="http://127.0.0.1:5052" \
+KONA_ZKVM_CANARY_L2_RPCS="901=http://127.0.0.1:9546" \
+cargo run --locked --package kona-zkvm-canary --bin kona-zkvm-canary -- --once
+```
+
+All snapshots, witnesses, ELF bytes, and report data remain in memory. The canary
+does not generate or persist a proof in either looping or one-shot operation.
+
 ## Building
 
 Programs are compiled for the zkVM target through the recipes in this directory's `justfile`.

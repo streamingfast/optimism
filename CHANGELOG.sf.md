@@ -9,6 +9,24 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## op-reth-v2.5.0-fh3.1
+
+Bumps the SF op-reth fork to upstream `op-reth/v2.5.0` (67 upstream commits on top of
+`op-reth/v2.4.4`).
+
+### Removed
+
+* The `op-reth import-op` and `op-reth import-receipts-op` commands, removed upstream
+  (ethereum-optimism/optimism#22942).
+
+### Changed
+
+* Merged upstream `op-reth/v2.5.0`. No Firehose code changed.
+* Reth pin unchanged: upstream `v2.5.0` still pins `op-rs/reth` rev `aef8d3ef`, so
+  `streamingfast/reth` tag `op-reth-v2.4.2-fh3.1-3` still applies.
+* `alloy-evm` stays locked at `0.37.0` so the `streamingfast/evm` `v0.37.0-sf` patch still
+  applies and block traces keep their `systemCalls`.
+
 ## op-reth-v2.4.4-fh3.1-3
 
 ### Changed

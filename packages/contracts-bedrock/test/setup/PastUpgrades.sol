@@ -188,7 +188,7 @@ library PastUpgrades {
         scSuccess;
 
         // Build dispute game configs with dummy prestates.
-        // Order must match validGameTypes in OPContractsManagerV2._assertValidFullConfig().
+        // Order must match VALID_GAME_TYPES in OPContractsManagerV2._assertValidFullConfig().
         IOPContractsManagerUtils.DisputeGameConfig[] memory disputeGameConfigs =
             new IOPContractsManagerUtils.DisputeGameConfig[](6);
 
@@ -250,7 +250,19 @@ library PastUpgrades {
             gameArgs: hex""
         });
 
-        _sortDisputeGameConfigs(disputeGameConfigs);
+        // Keep retired games disabled instead of restoring them with a zero bond.
+        for (uint256 i = 0; i < disputeGameConfigs.length; i++) {
+            if (address(_disputeGameFactory.gameImpls(disputeGameConfigs[i].gameType)) == address(0)) {
+                disputeGameConfigs[i].enabled = false;
+                disputeGameConfigs[i].initBond = 0;
+                disputeGameConfigs[i].gameArgs = hex"";
+            }
+        }
+
+        // V8 uses the explicit game order above, not numerical order.
+        if (SemverComp.parse(ISemver(_opcm).version()).major < 8) {
+            _sortDisputeGameConfigs(disputeGameConfigs);
+        }
 
         // Execute the V2 upgrade
         vm.prank(_delegateCaller, true);

@@ -125,6 +125,8 @@ pub(crate) struct ProofInputs {
     pub(crate) starting_sequence_number: u64,
     pub(crate) root_claim: B256,
     pub(crate) sequence_number: u64,
+    /// The game's immutable `verifier()` adapter; each game keeps the one it was created with.
+    pub(crate) verifier: Address,
 }
 
 /// Super-root safety horizons used by proposal policy.
@@ -172,6 +174,7 @@ pub(crate) struct GameCreationReceipt {
 /// Read-only L1 observations consumed by proposer policy.
 #[async_trait]
 pub(crate) trait L1View: Send + Sync {
+    async fn signer_balance(&self, address: Address) -> Result<U256>;
     async fn latest_head(&self) -> Result<Option<L1BlockRef>>;
     async fn block_ref(&self, number: u64) -> Result<Option<L1BlockRef>>;
     async fn registered_game_args(&self, block: BlockId) -> Result<ZKGameArgs>;
@@ -197,7 +200,7 @@ pub(crate) trait L1View: Send + Sync {
         block: BlockId,
     ) -> Result<BondState>;
     async fn init_bond(&self) -> Result<U256>;
-    async fn game_status(&self, game: Address) -> Result<u8>;
+    async fn game_status(&self, game: Address, block: BlockId) -> Result<u8>;
     async fn claim_preflight(
         &self,
         game: Address,
@@ -210,11 +213,18 @@ pub(crate) trait L1View: Send + Sync {
     async fn nonce_state(&self, proposer: Address) -> Result<NonceState>;
     async fn respected_game_type(&self, block: BlockId) -> Result<u32>;
     async fn parent_standing(&self, game: Address, registry: Address) -> Result<GameStanding>;
-    async fn game_standing(&self, game: Address, registry: Address) -> Result<GameStanding>;
+    async fn game_standing(
+        &self,
+        game: Address,
+        registry: Address,
+        block: BlockId,
+    ) -> Result<GameStanding>;
     async fn proof_status(&self, game: Address) -> Result<u8>;
     async fn proof_inputs(&self, game: Address) -> Result<ProofInputs>;
-    async fn anchor_state_registry(&self, game: Address) -> Result<Address>;
     async fn latest_l1_timestamp(&self) -> Result<u64>;
+    /// `VERIFIER_HASH()` of the raw SP1 verifier wrapped by the `SP1PlonkAdapter` at
+    /// `verifier` (a game's or the registered args' `verifier`).
+    async fn verifier_hash(&self, verifier: Address) -> Result<B256>;
 }
 
 /// Super-root observations consumed by proposal and proof policy.
@@ -227,6 +237,8 @@ pub(crate) trait SuperRootSource: Send + Sync {
 /// Expensive witness collection and SP1 proof execution.
 #[async_trait]
 pub(crate) trait ProofEngine: Send + Sync {
+    /// Spendable PROVE tokens, or None for mock proving.
+    async fn prove_balance(&self) -> Result<Option<f64>>;
     async fn prove(
         &self,
         game_address: Address,
