@@ -50,4 +50,10 @@ Checked by hand:
 - `cargo test --locked -p reth-optimism-firehose -p alloy-op-evm -p op-alloy-consensus` — 167 passed, 0 failed.
 - `cargo test --locked -p reth-optimism-node --lib --test it` — 45 passed (31 lib, 14 integration), 0 failed.
 - `cargo test --locked -p reth-optimism-cli` — 9 passed, 0 failed.
-- Battlefield (`op-reth-devnet`): not run.
+- Battlefield (`op-reth-devnet`, battlefield-ethereum `master` @ `0e0c41f`): 78 passing, 15 pending
+  (skipped by the suite), 0 failing. `op-reth` stayed at the sequencer head for the whole run.
+  - `scripts/optimism/run_optimism_devnet.sh` failed twice before `op-reth` started: once funding
+    the test address timed out (the funding tx goes to flashblocks-rpc on port 8548, which only
+    reaches op-rbuilder via p2p gossip), once bproxy failed its readiness check.
+  - The passing run used a local edit of that script: send the funding tx to op-rbuilder
+    (`$l2_geth_rpc_url`, port 8547, the same RPC the tests use) and wait 60s instead of 15s.
