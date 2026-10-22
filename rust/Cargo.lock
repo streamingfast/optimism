@@ -398,8 +398,7 @@ dependencies = [
 [[package]]
 name = "alloy-evm"
 version = "0.38.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b307a52f91f7f3aad56b5cb4f54e5eb17dd0b3f4b2c82823301499fe1c6fdaf"
+source = "git+https://github.com/streamingfast/evm.git?tag=v0.38.0-sf#0ac393245b50497e8b98adca267d050065203fdb"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -1328,7 +1327,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1339,7 +1338,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3517,7 +3516,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4354,7 +4353,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4722,7 +4721,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5013,6 +5012,29 @@ name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+
+[[package]]
+name = "firehose-tracer"
+version = "5.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a53eb86c6d17bd4e5517e46f56498d33d128d0641d78d15b86cf2c0605c814ee"
+dependencies = [
+ "alloy-consensus 2.4.2",
+ "alloy-eips 2.5.0",
+ "alloy-genesis",
+ "alloy-primitives",
+ "alloy-rlp",
+ "base64-simd",
+ "eyre",
+ "hex",
+ "k256",
+ "num_enum 0.7.6",
+ "prost 0.14.3",
+ "prost-types 0.14.3",
+ "serde",
+ "serde_json",
+ "tracing",
+]
 
 [[package]]
 name = "fixed-cache"
@@ -5341,8 +5363,8 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1",
- "windows-result 0.4.1",
+ "windows-link 0.1.3",
+ "windows-result 0.3.4",
 ]
 
 [[package]]
@@ -6014,7 +6036,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "system-configuration",
  "tokio",
  "tower-layer",
@@ -6035,7 +6057,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -6462,7 +6484,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9143,7 +9165,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -9432,6 +9454,7 @@ dependencies = [
  "rand 0.9.4",
  "reth-codecs",
  "reth-codecs-derive",
+ "reth-firehose",
  "reth-zstd-compressors",
  "rstest",
  "serde",
@@ -9529,9 +9552,11 @@ name = "op-reth"
 version = "1.11.3"
 dependencies = [
  "eyre",
+ "firehose-tracer",
  "op-version",
  "reth-cli-util",
  "reth-db",
+ "reth-firehose",
  "reth-node-builder",
  "reth-node-core",
  "reth-optimism-chainspec",
@@ -10936,7 +10961,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -10975,7 +11000,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -11491,7 +11516,7 @@ checksum = "1e061d1b48cb8d38042de4ae0a7a6401009d6143dc80d2e2d6f31f0bdd6470c7"
 [[package]]
 name = "reth-basic-payload-builder"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -11518,7 +11543,7 @@ dependencies = [
 [[package]]
 name = "reth-chain-state"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -11549,7 +11574,7 @@ dependencies = [
 [[package]]
 name = "reth-chainspec"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-chains",
  "alloy-consensus 2.4.2",
@@ -11569,7 +11594,7 @@ dependencies = [
 [[package]]
 name = "reth-cli"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-genesis",
  "clap",
@@ -11582,7 +11607,7 @@ dependencies = [
 [[package]]
 name = "reth-cli-commands"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-chains",
  "alloy-consensus 2.4.2",
@@ -11671,7 +11696,7 @@ dependencies = [
 [[package]]
 name = "reth-cli-runner"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "reth-tasks",
  "tokio",
@@ -11681,7 +11706,7 @@ dependencies = [
 [[package]]
 name = "reth-cli-util"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-eips 2.5.0",
  "alloy-primitives",
@@ -11734,7 +11759,7 @@ dependencies = [
 [[package]]
 name = "reth-config"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "eyre",
  "humantime-serde",
@@ -11751,7 +11776,7 @@ dependencies = [
 [[package]]
 name = "reth-consensus"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eip7928 0.4.5",
@@ -11765,7 +11790,7 @@ dependencies = [
 [[package]]
 name = "reth-consensus-common"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -11778,7 +11803,7 @@ dependencies = [
 [[package]]
 name = "reth-consensus-debug-client"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -11803,7 +11828,7 @@ dependencies = [
 [[package]]
 name = "reth-db"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "derive_more 2.1.1",
@@ -11832,7 +11857,7 @@ dependencies = [
 [[package]]
 name = "reth-db-api"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-primitives",
@@ -11858,7 +11883,7 @@ dependencies = [
 [[package]]
 name = "reth-db-common"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-genesis",
@@ -11888,7 +11913,7 @@ dependencies = [
 [[package]]
 name = "reth-db-models"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-eips 2.5.0",
  "alloy-primitives",
@@ -11903,7 +11928,7 @@ dependencies = [
 [[package]]
 name = "reth-discv4"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -11928,7 +11953,7 @@ dependencies = [
 [[package]]
 name = "reth-discv5"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -11952,7 +11977,7 @@ dependencies = [
 [[package]]
 name = "reth-dns-discovery"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "dashmap",
@@ -11976,7 +12001,7 @@ dependencies = [
 [[package]]
 name = "reth-downloaders"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -12011,7 +12036,7 @@ dependencies = [
 [[package]]
 name = "reth-e2e-test-utils"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -12068,7 +12093,7 @@ dependencies = [
 [[package]]
 name = "reth-ecies"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "aes",
  "alloy-primitives",
@@ -12095,7 +12120,7 @@ dependencies = [
 [[package]]
 name = "reth-engine-local"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-primitives",
@@ -12118,7 +12143,7 @@ dependencies = [
 [[package]]
 name = "reth-engine-primitives"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -12145,7 +12170,7 @@ dependencies = [
 [[package]]
 name = "reth-engine-tree"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eip7928 0.4.5",
@@ -12172,6 +12197,7 @@ dependencies = [
  "reth-evm",
  "reth-execution-cache",
  "reth-execution-types",
+ "reth-firehose",
  "reth-metrics",
  "reth-network-p2p",
  "reth-payload-builder",
@@ -12201,7 +12227,7 @@ dependencies = [
 [[package]]
 name = "reth-engine-util"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-primitives",
@@ -12231,7 +12257,7 @@ dependencies = [
 [[package]]
 name = "reth-era"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -12249,7 +12275,7 @@ dependencies = [
 [[package]]
 name = "reth-era-downloader"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "bytes",
@@ -12265,7 +12291,7 @@ dependencies = [
 [[package]]
 name = "reth-era-utils"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-primitives",
@@ -12289,7 +12315,7 @@ dependencies = [
 [[package]]
 name = "reth-errors"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "reth-consensus",
  "reth-execution-errors",
@@ -12300,7 +12326,7 @@ dependencies = [
 [[package]]
 name = "reth-eth-wire"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-chains",
  "alloy-primitives",
@@ -12329,7 +12355,7 @@ dependencies = [
 [[package]]
 name = "reth-eth-wire-types"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-chains",
  "alloy-consensus 2.4.2",
@@ -12355,7 +12381,7 @@ dependencies = [
 [[package]]
 name = "reth-ethereum"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-rpc-types-engine",
  "alloy-rpc-types-eth 2.4.2",
@@ -12396,7 +12422,7 @@ dependencies = [
 [[package]]
 name = "reth-ethereum-cli"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "clap",
  "eyre",
@@ -12419,7 +12445,7 @@ dependencies = [
 [[package]]
 name = "reth-ethereum-consensus"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -12435,7 +12461,7 @@ dependencies = [
 [[package]]
 name = "reth-ethereum-engine-primitives"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-eips 2.5.0",
  "alloy-primitives",
@@ -12451,7 +12477,7 @@ dependencies = [
 [[package]]
 name = "reth-ethereum-forks"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-eip2124",
  "alloy-hardforks",
@@ -12465,7 +12491,7 @@ dependencies = [
 [[package]]
 name = "reth-ethereum-payload-builder"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -12495,7 +12521,7 @@ dependencies = [
 [[package]]
 name = "reth-ethereum-primitives"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -12509,7 +12535,7 @@ dependencies = [
 [[package]]
 name = "reth-etl"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "rayon",
  "reth-db-api",
@@ -12519,7 +12545,7 @@ dependencies = [
 [[package]]
 name = "reth-evm"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eip7928 0.4.5",
@@ -12545,7 +12571,7 @@ dependencies = [
 [[package]]
 name = "reth-evm-ethereum"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -12565,7 +12591,7 @@ dependencies = [
 [[package]]
 name = "reth-execution-cache"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "fixed-cache",
@@ -12583,7 +12609,7 @@ dependencies = [
 [[package]]
 name = "reth-execution-errors"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-evm",
  "alloy-primitives",
@@ -12596,7 +12622,7 @@ dependencies = [
 [[package]]
 name = "reth-execution-types"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -12615,7 +12641,7 @@ dependencies = [
 [[package]]
 name = "reth-exex"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -12653,7 +12679,7 @@ dependencies = [
 [[package]]
 name = "reth-exex-test-utils"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-eips 2.5.0",
  "eyre",
@@ -12685,7 +12711,7 @@ dependencies = [
 [[package]]
 name = "reth-exex-types"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-eips 2.5.0",
  "alloy-primitives",
@@ -12697,9 +12723,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "reth-firehose"
+version = "2.5.2"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
+dependencies = [
+ "alloy-consensus 2.4.2",
+ "alloy-eip7928 0.4.5",
+ "alloy-eips 2.5.0",
+ "alloy-evm",
+ "alloy-genesis",
+ "alloy-primitives",
+ "alloy-rlp",
+ "eyre",
+ "firehose-tracer",
+ "reth-chainspec",
+ "reth-ethereum-primitives",
+ "reth-evm",
+ "reth-execution-types",
+ "reth-node-api",
+ "reth-primitives-traits",
+ "reth-provider",
+ "reth-revm",
+ "reth-tracing",
+]
+
+[[package]]
 name = "reth-fs-util"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "serde",
  "serde_json",
@@ -12709,7 +12760,7 @@ dependencies = [
 [[package]]
 name = "reth-invalid-block-hooks"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-primitives",
@@ -12735,7 +12786,7 @@ dependencies = [
 [[package]]
 name = "reth-ipc"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "bytes",
  "futures",
@@ -12755,7 +12806,7 @@ dependencies = [
 [[package]]
 name = "reth-libmdbx"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "bitflags 2.11.1",
  "byteorder",
@@ -12772,7 +12823,7 @@ dependencies = [
 [[package]]
 name = "reth-mdbx-sys"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "bindgen",
  "cc",
@@ -12781,7 +12832,7 @@ dependencies = [
 [[package]]
 name = "reth-metrics"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "futures",
  "libc",
@@ -12795,7 +12846,7 @@ dependencies = [
 [[package]]
 name = "reth-net-banlist"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "ipnet",
@@ -12804,7 +12855,7 @@ dependencies = [
 [[package]]
 name = "reth-net-nat"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "futures-util",
  "if-addrs 0.14.0",
@@ -12818,7 +12869,7 @@ dependencies = [
 [[package]]
 name = "reth-network"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -12877,7 +12928,7 @@ dependencies = [
 [[package]]
 name = "reth-network-api"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-primitives",
@@ -12902,7 +12953,7 @@ dependencies = [
 [[package]]
 name = "reth-network-p2p"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eip7928 0.4.5",
@@ -12926,7 +12977,7 @@ dependencies = [
 [[package]]
 name = "reth-network-peers"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -12941,7 +12992,7 @@ dependencies = [
 [[package]]
 name = "reth-network-types"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-eip2124",
  "humantime-serde",
@@ -12955,7 +13006,7 @@ dependencies = [
 [[package]]
 name = "reth-nippy-jar"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
@@ -12972,7 +13023,7 @@ dependencies = [
 [[package]]
 name = "reth-node-api"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-rpc-types-engine",
  "eyre",
@@ -12996,7 +13047,7 @@ dependencies = [
 [[package]]
 name = "reth-node-builder"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -13027,6 +13078,7 @@ dependencies = [
  "reth-engine-util",
  "reth-evm",
  "reth-exex",
+ "reth-firehose",
  "reth-fs-util",
  "reth-invalid-block-hooks",
  "reth-network",
@@ -13064,7 +13116,7 @@ dependencies = [
 [[package]]
 name = "reth-node-core"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -13119,7 +13171,7 @@ dependencies = [
 [[package]]
 name = "reth-node-ethereum"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -13168,7 +13220,7 @@ dependencies = [
 [[package]]
 name = "reth-node-ethstats"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-primitives",
@@ -13192,7 +13244,7 @@ dependencies = [
 [[package]]
 name = "reth-node-events"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -13216,7 +13268,7 @@ dependencies = [
 [[package]]
 name = "reth-node-metrics"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "bytes",
  "eyre",
@@ -13245,7 +13297,7 @@ dependencies = [
 [[package]]
 name = "reth-node-types"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "reth-chainspec",
  "reth-db-api",
@@ -13356,6 +13408,7 @@ dependencies = [
  "reth-node-metrics",
  "reth-optimism-chainspec",
  "reth-optimism-consensus",
+ "reth-optimism-firehose",
  "reth-optimism-node",
  "reth-optimism-primitives",
  "reth-optimism-trie",
@@ -13471,6 +13524,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "reth-optimism-firehose"
+version = "2.3.0"
+dependencies = [
+ "alloy-consensus 2.4.2",
+ "alloy-eips 2.5.0",
+ "alloy-evm",
+ "alloy-op-evm",
+ "alloy-primitives",
+ "crossbeam-channel",
+ "derive_more 2.1.1",
+ "eyre",
+ "firehose-tracer",
+ "op-alloy-consensus",
+ "op-revm",
+ "reth-chain-state",
+ "reth-chainspec",
+ "reth-consensus",
+ "reth-engine-primitives",
+ "reth-engine-tree",
+ "reth-errors",
+ "reth-evm",
+ "reth-execution-cache",
+ "reth-firehose",
+ "reth-node-api",
+ "reth-node-builder",
+ "reth-optimism-evm",
+ "reth-optimism-primitives",
+ "reth-payload-builder",
+ "reth-payload-primitives",
+ "reth-primitives-traits",
+ "reth-provider",
+ "reth-revm",
+ "reth-storage-overlay",
+ "reth-tasks",
+ "reth-trie",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "reth-optimism-flashblocks"
 version = "1.11.3"
 dependencies = [
@@ -13574,6 +13667,7 @@ dependencies = [
  "reth-optimism-consensus",
  "reth-optimism-evm",
  "reth-optimism-exex",
+ "reth-optimism-firehose",
  "reth-optimism-forks",
  "reth-optimism-node",
  "reth-optimism-payload-builder",
@@ -13631,6 +13725,7 @@ dependencies = [
  "reth-chainspec",
  "reth-evm",
  "reth-execution-types",
+ "reth-firehose",
  "reth-metrics",
  "reth-node-metrics",
  "reth-optimism-chainspec",
@@ -13882,7 +13977,7 @@ dependencies = [
 [[package]]
 name = "reth-payload-builder"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-primitives",
@@ -13906,7 +14001,7 @@ dependencies = [
 [[package]]
 name = "reth-payload-builder-primitives"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "pin-project",
  "reth-payload-primitives",
@@ -13918,7 +14013,7 @@ dependencies = [
 [[package]]
 name = "reth-payload-primitives"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -13941,7 +14036,7 @@ dependencies = [
 [[package]]
 name = "reth-payload-util"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-primitives",
@@ -13951,7 +14046,7 @@ dependencies = [
 [[package]]
 name = "reth-payload-validator"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-rpc-types-engine",
@@ -13994,7 +14089,7 @@ dependencies = [
 [[package]]
 name = "reth-provider"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eip7928 0.4.5",
@@ -14044,7 +14139,7 @@ dependencies = [
 [[package]]
 name = "reth-prune"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-primitives",
@@ -14071,7 +14166,7 @@ dependencies = [
 [[package]]
 name = "reth-prune-types"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "arbitrary",
@@ -14087,7 +14182,7 @@ dependencies = [
 [[package]]
 name = "reth-revm"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -14102,7 +14197,7 @@ dependencies = [
 [[package]]
 name = "reth-rpc"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-dyn-abi",
@@ -14145,6 +14240,7 @@ dependencies = [
  "reth-evm",
  "reth-evm-ethereum",
  "reth-execution-types",
+ "reth-firehose",
  "reth-metrics",
  "reth-network-api",
  "reth-network-peers",
@@ -14178,7 +14274,7 @@ dependencies = [
 [[package]]
 name = "reth-rpc-api"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-eips 2.5.0",
  "alloy-genesis",
@@ -14208,7 +14304,7 @@ dependencies = [
 [[package]]
 name = "reth-rpc-builder"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-network 2.4.2",
  "alloy-provider",
@@ -14251,7 +14347,7 @@ dependencies = [
 [[package]]
 name = "reth-rpc-convert"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-evm",
@@ -14271,7 +14367,7 @@ dependencies = [
 [[package]]
 name = "reth-rpc-engine-api"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-eips 2.5.0",
  "alloy-primitives",
@@ -14302,7 +14398,7 @@ dependencies = [
 [[package]]
 name = "reth-rpc-eth-api"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-dyn-abi",
@@ -14349,7 +14445,7 @@ dependencies = [
 [[package]]
 name = "reth-rpc-eth-types"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-chains",
  "alloy-consensus 2.4.2",
@@ -14400,7 +14496,7 @@ dependencies = [
 [[package]]
 name = "reth-rpc-layer"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-rpc-types-engine",
  "http 1.4.0",
@@ -14414,7 +14510,7 @@ dependencies = [
 [[package]]
 name = "reth-rpc-server-types"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-eips 2.5.0",
  "alloy-primitives",
@@ -14445,7 +14541,7 @@ dependencies = [
 [[package]]
 name = "reth-stages"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-primitives",
@@ -14496,7 +14592,7 @@ dependencies = [
 [[package]]
 name = "reth-stages-api"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-eips 2.5.0",
  "alloy-primitives",
@@ -14524,7 +14620,7 @@ dependencies = [
 [[package]]
 name = "reth-stages-types"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "arbitrary",
@@ -14538,7 +14634,7 @@ dependencies = [
 [[package]]
 name = "reth-static-file"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "parking_lot",
@@ -14558,7 +14654,7 @@ dependencies = [
 [[package]]
 name = "reth-static-file-types"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "clap",
@@ -14573,7 +14669,7 @@ dependencies = [
 [[package]]
 name = "reth-storage-api"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eip7928 0.4.5",
@@ -14599,7 +14695,7 @@ dependencies = [
 [[package]]
 name = "reth-storage-errors"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-eips 2.5.0",
  "alloy-primitives",
@@ -14616,7 +14712,7 @@ dependencies = [
 [[package]]
 name = "reth-storage-overlay"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-eips 2.5.0",
  "alloy-primitives",
@@ -14643,7 +14739,7 @@ dependencies = [
 [[package]]
 name = "reth-tasks"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "crossbeam-utils",
  "dashmap",
@@ -14664,7 +14760,7 @@ dependencies = [
 [[package]]
 name = "reth-testing-utils"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -14680,7 +14776,7 @@ dependencies = [
 [[package]]
 name = "reth-tokio-util"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "tokio",
  "tokio-stream",
@@ -14690,7 +14786,7 @@ dependencies = [
 [[package]]
 name = "reth-tracing"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "clap",
  "eyre",
@@ -14710,7 +14806,7 @@ dependencies = [
 [[package]]
 name = "reth-tracing-otlp"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -14729,7 +14825,7 @@ dependencies = [
 [[package]]
 name = "reth-transaction-pool"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -14774,7 +14870,7 @@ dependencies = [
 [[package]]
 name = "reth-trie"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-eips 2.5.0",
@@ -14800,7 +14896,7 @@ dependencies = [
 [[package]]
 name = "reth-trie-common"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-consensus 2.4.2",
  "alloy-primitives",
@@ -14827,7 +14923,7 @@ dependencies = [
 [[package]]
 name = "reth-trie-db"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "reth-db-api",
@@ -14843,7 +14939,7 @@ dependencies = [
 [[package]]
 name = "reth-trie-parallel"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-evm",
  "alloy-primitives",
@@ -14867,7 +14963,7 @@ dependencies = [
 [[package]]
 name = "reth-trie-sparse"
 version = "2.5.2"
-source = "git+https://github.com/ethereum-optimism/reth?rev=0fbe428518594611bdd3fdd822eb5968823c8e66#0fbe428518594611bdd3fdd822eb5968823c8e66"
+source = "git+https://github.com/streamingfast/reth.git?branch=bump%2Fworld-chain-v2.6.0#6c161666bbe615693bd3565587cefebfe807165f"
 dependencies = [
  "alloy-primitives",
  "alloy-trie",
@@ -15435,7 +15531,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -15524,7 +15620,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs 1.0.7",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -16706,7 +16802,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -17629,7 +17725,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
