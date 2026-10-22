@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
+	"net/http"
 	"time"
 
 	"github.com/ethereum-optimism/optimism/op-core/interop/depset"
@@ -13,7 +15,6 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
 	gnode "github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -32,6 +33,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/event"
+	"github.com/ethereum-optimism/optimism/op-service/log"
 	"github.com/ethereum-optimism/optimism/op-service/safego"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
 	"github.com/ethereum-optimism/optimism/op-service/testutils"
@@ -210,7 +212,7 @@ func NewL2Verifier(t Testing, log log.Logger, l1 derive.L1Fetcher,
 		},
 		{
 			Namespace: "opstack",
-			Service:   node.NewOpstackAPI(ec, &testutils.FakePublishAPI{Log: log}),
+			Service:   node.NewOpstackAPI(ec, &FakePublishAPI{Log: log}),
 		},
 	}
 	require.NoError(t, gnode.RegisterApis(apis, nil, rollupNode.rpc), "failed to set up APIs")
@@ -238,6 +240,25 @@ func (proposerSuperRootSafeDB) LastEntry(context.Context) (eth.BlockID, eth.Bloc
 func (s *L2Verifier) EnableProposerSuperRootAPI(t Testing) {
 	api := node.NewSuperrootAPI(s.RollupCfg, s.Eng, &l2VerifierBackend{verifier: s}, proposerSuperRootSafeDB{})
 	require.NoError(t, s.rpc.RegisterName("superroot", api))
+}
+
+// StartSuperRootHTTPRPC enables the superroot API and serves the verifier's RPC over a loopback
+// HTTP listener, returning its endpoint. RPCClient hands out an in-process handle, which a
+// separate process — e.g. the kona-sp1 super-range executor, which needs a `--supernode-address`
+// to call `superroot_atTimestamp` on — cannot dial. The listener is closed on test cleanup.
+func (s *L2Verifier) StartSuperRootHTTPRPC(t Testing) string {
+	s.EnableProposerSuperRootAPI(t)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err, "listen for the verifier superroot RPC")
+	server := &http.Server{Handler: s.rpc, ReadHeaderTimeout: 30 * time.Second}
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		_ = server.Close()
+	})
+	return "http://" + listener.Addr().String()
 }
 
 type l2VerifierBackend struct {

@@ -6,7 +6,6 @@ use crate::{
 };
 use eyre::ErrReport;
 use futures_util::FutureExt;
-use reth_chainspec::EthChainSpec;
 use reth_db::DatabaseEnv;
 use reth_db_api::database_metrics::DatabaseMetrics;
 use reth_node_builder::{FullNodeComponents, NodeBuilder, WithLaunchContext};
@@ -40,23 +39,12 @@ pub async fn launch_node(
     builder: WithLaunchContext<NodeBuilder<DatabaseEnv, OpChainSpec>>,
     args: RollupArgs,
 ) -> eyre::Result<(), ErrReport> {
-    // Record the chain config on the Firehose tracer (emits `FIRE INIT`) before the node launches,
-    // so it happens ahead of the first engine-API payload. The SF reth fork does this in its
-    // Firehose ExEx, which `op-reth` does not use — see `reth_optimism_firehose::init_blockchain`.
-    // No-op when the tracer is not initialized.
-    reth_optimism_firehose::init_blockchain(builder.config().chain.chain_id());
-
     if !args.proofs_history {
         let handle = builder
             .node(OpNode::new(args))
-            // Genesis emission must wait until the DB is initialized (the genesis block is
-            // written during launch), hence `on_node_started` rather than alongside
-            // `init_blockchain` above.
-            .on_node_started(|node| {
-                reth_optimism_firehose::emit_genesis_block_if_empty(
-                    &node.provider,
-                    node.chain_spec().as_ref(),
-                )
+            // Must stay the only `on_component_initialized` hook: a later one replaces it.
+            .on_component_initialized(|node| {
+                reth_optimism_firehose::init_blockchain(&node.provider)
             })
             .launch_with_debug_capabilities()
             .await?;
@@ -105,11 +93,9 @@ where
 
     let handle = builder
         .node(OpNode::new(args))
+        // Must stay the only `on_component_initialized` hook: a later one replaces it.
+        .on_component_initialized(|node| reth_optimism_firehose::init_blockchain(&node.provider))
         .on_node_started(move |node| {
-            reth_optimism_firehose::emit_genesis_block_if_empty(
-                &node.provider,
-                node.chain_spec().as_ref(),
-            )?;
             spawn_proofs_db_metrics(
                 node.task_executor,
                 mdbx,

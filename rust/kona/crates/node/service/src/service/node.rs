@@ -2,28 +2,30 @@
 use crate::{
     ConductorClient, DelayedL1OriginSelectorProvider, DelegateDerivationActor, DerivationActor,
     DerivationActorRequest, DerivationDelegateClient, DerivationError, EngineActor,
-    EngineActorRequest, EngineConfig, EngineRpcActor, EngineRpcRequest, InteropMode,
-    JsonrpseeServerLauncher, L1OriginSelector, L1WatcherActor, NetworkActor, NetworkBuilder,
-    NetworkConfig, NetworkHandler, NodeActor, NodeMode, QueuedDerivationEngineClient,
+    EngineActorRequest, EngineConfig, EngineRpcActor, EngineRpcRequest, JsonrpseeServerLauncher,
+    L1OriginSelector, L1WatcherActor, L1WatcherChain, NetworkActor, NetworkBuilder, NetworkConfig,
+    NetworkHandler, NodeActor, NodeMode, QueuedDerivationEngineClient,
     QueuedEngineDerivationClient, QueuedEngineRpcClient, QueuedL1WatcherDerivationClient,
     QueuedNetworkEngineClient, QueuedSequencerAdminAPIClient, QueuedSequencerEngineClient,
     RpcActor, RpcServerLauncher, SequencerActor, SequencerConfig,
     actors::{BlockStream, QueuedUnsafePayloadGossipClient},
+    service::BufferImportedBlocks,
 };
 use alloy_eips::BlockNumberOrTag;
 use alloy_primitives::Address;
 use alloy_provider::RootProvider;
 use jsonrpsee::RpcModule;
-use kona_derive::StatefulAttributesBuilder;
+use kona_derive::{BlobProviderError, StatefulAttributesBuilder};
 use kona_engine::{Engine, EngineState, OpEngineClient};
 use kona_genesis::{L1ChainConfig, RollupConfig};
 use kona_gossip::P2pRpcRequest;
 use kona_interop::DependencySet;
 use kona_protocol::{BlockInfo, L2BlockInfo};
 use kona_providers_alloy::{
-    AlloyChainProvider, AlloyL2ChainProvider, OnlineBeaconClient, OnlineBlobProvider,
-    OnlinePipeline,
+    AlloyChainProvider, AlloyL2ChainProvider, BufferedAlloyL2ChainProvider, OnlineBeaconClient,
+    OnlineBlobProvider, OnlinePipeline,
 };
+use kona_providers_local::BufferedL2Provider;
 use kona_rpc::{
     AdminApiServer, AdminRpc, DevEngineApiServer, DevEngineRpc, HealthzApiServer, HealthzRpc,
     L1WatcherQueries, NetworkAdminQuery, OpP2PApiServer, P2pRpc, RollupNodeApiServer, RollupRpc,
@@ -36,6 +38,12 @@ use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 const DERIVATION_PROVIDER_CACHE_SIZE: usize = 1024;
+/// How many recently imported blocks to keep for the local L2 lookups.
+///
+/// Every lookup served from here is for the block being built on top of, which the engine recorded
+/// one step earlier. The size absorbs what lands in between — gossiped unsafe blocks keep
+/// arriving, and on a sequencer the two builders ask about different heads.
+pub(super) const IMPORTED_BLOCK_BUFFER_SIZE: usize = 32;
 const HEAD_STREAM_POLL_INTERVAL: u64 = 4;
 const FINALIZED_STREAM_POLL_INTERVAL: u64 = 60;
 
@@ -60,8 +68,6 @@ pub struct RollupNode {
     pub(crate) config: Arc<RollupConfig>,
     /// The L1 configuration.
     pub(crate) l1_config: L1Config,
-    /// The interop mode for the node.
-    pub(crate) interop_mode: InteropMode,
     /// The L2 EL provider.
     pub(crate) l2_provider: RootProvider<Optimism>,
     /// Whether to trust the L2 RPC.
@@ -76,6 +82,9 @@ pub struct RollupNode {
     pub(crate) sequencer_config: SequencerConfig,
     /// Optional derivation delegate provider.
     pub(crate) derivation_delegate_provider: Option<DerivationDelegateClient>,
+    /// Blocks the engine has imported, shared with the derivation providers so they can be read
+    /// locally instead of fetched back from the execution layer.
+    pub(crate) l2_block_buffer: BufferedL2Provider,
     /// The interop dependency set for this chain.
     /// Mirrors op-node's `--interop.dependency-set`.
     /// [`StatefulAttributesBuilder`] constructor panics otherwise.
@@ -133,7 +142,7 @@ type ConfiguredEngineRpcActor =
 
 /// Concrete type of the sequencer actor used by `RollupNode`.
 type ConfiguredSequencerActor = SequencerActor<
-    StatefulAttributesBuilder<AlloyChainProvider, AlloyL2ChainProvider>,
+    StatefulAttributesBuilder<AlloyChainProvider, BufferedAlloyL2ChainProvider>,
     ConductorClient,
     L1OriginSelector<DelayedL1OriginSelectorProvider>,
     QueuedSequencerEngineClient,
@@ -162,17 +171,20 @@ impl RollupNode {
     /// Returns the sequencer builder for the node.
     fn create_attributes_builder(
         &self,
-    ) -> StatefulAttributesBuilder<AlloyChainProvider, AlloyL2ChainProvider> {
+    ) -> StatefulAttributesBuilder<AlloyChainProvider, BufferedAlloyL2ChainProvider> {
         let l1_derivation_provider = AlloyChainProvider::new_with_trust(
             self.l1_config.engine_provider.clone(),
             DERIVATION_PROVIDER_CACHE_SIZE,
             self.l1_config.trust_rpc,
         );
-        let l2_derivation_provider = AlloyL2ChainProvider::new_with_trust(
-            self.l2_provider.clone(),
-            self.config.clone(),
-            DERIVATION_PROVIDER_CACHE_SIZE,
-            self.l2_trust_rpc,
+        let l2_derivation_provider = BufferedAlloyL2ChainProvider::new(
+            self.l2_block_buffer.clone(),
+            AlloyL2ChainProvider::new_with_trust(
+                self.l2_provider.clone(),
+                self.config.clone(),
+                DERIVATION_PROVIDER_CACHE_SIZE,
+                self.l2_trust_rpc,
+            ),
         );
 
         StatefulAttributesBuilder::new(
@@ -184,38 +196,31 @@ impl RollupNode {
         )
     }
 
-    async fn create_pipeline(&self) -> OnlinePipeline {
+    async fn create_pipeline(&self) -> Result<OnlinePipeline, BlobProviderError> {
         // Create the caching L1/L2 EL providers for derivation.
         let l1_derivation_provider = AlloyChainProvider::new_with_trust(
             self.l1_config.engine_provider.clone(),
             DERIVATION_PROVIDER_CACHE_SIZE,
             self.l1_config.trust_rpc,
         );
-        let l2_derivation_provider = AlloyL2ChainProvider::new_with_trust(
-            self.l2_provider.clone(),
-            self.config.clone(),
-            DERIVATION_PROVIDER_CACHE_SIZE,
-            self.l2_trust_rpc,
+        let l2_derivation_provider = BufferedAlloyL2ChainProvider::new(
+            self.l2_block_buffer.clone(),
+            AlloyL2ChainProvider::new_with_trust(
+                self.l2_provider.clone(),
+                self.config.clone(),
+                DERIVATION_PROVIDER_CACHE_SIZE,
+                self.l2_trust_rpc,
+            ),
         );
 
-        match self.interop_mode {
-            InteropMode::Polled => OnlinePipeline::new_polled(
-                self.config.clone(),
-                self.l1_config.chain_config.clone(),
-                OnlineBlobProvider::init(self.l1_config.beacon_client.clone()).await,
-                l1_derivation_provider,
-                l2_derivation_provider,
-                self.dependency_set.clone(),
-            ),
-            InteropMode::Indexed => OnlinePipeline::new_indexed(
-                self.config.clone(),
-                self.l1_config.chain_config.clone(),
-                OnlineBlobProvider::init(self.l1_config.beacon_client.clone()).await,
-                l1_derivation_provider,
-                l2_derivation_provider,
-                self.dependency_set.clone(),
-            ),
-        }
+        Ok(OnlinePipeline::new_polled(
+            self.config.clone(),
+            self.l1_config.chain_config.clone(),
+            OnlineBlobProvider::init(self.l1_config.beacon_client.clone()).await?,
+            l1_derivation_provider,
+            l2_derivation_provider,
+            self.dependency_set.clone(),
+        ))
     }
 
     /// Builds both engine actors. They share a single [`kona_engine::EngineClient`] and a watch
@@ -248,6 +253,7 @@ impl RollupNode {
             engine,
             unsafe_head_tx_opt,
             engine_request_rx,
+            Arc::new(BufferImportedBlocks::new(self.l2_block_buffer.clone())),
         );
 
         let rpc_actor = EngineRpcActor::new(
@@ -267,24 +273,30 @@ impl RollupNode {
         &self,
         engine_actor_request_tx: mpsc::Sender<EngineActorRequest>,
         derivation_actor_request_rx: mpsc::Receiver<DerivationActorRequest>,
-    ) -> ConfiguredDerivationActor {
+    ) -> Result<ConfiguredDerivationActor, String> {
         if let Some(provider) = self.derivation_delegate_provider.clone() {
             // L1 Provider for sanity checking Derivation Delegation
             let l1_provider = AlloyChainProvider::new(
                 self.l1_config.engine_provider.clone(),
                 DERIVATION_PROVIDER_CACHE_SIZE,
             );
-            ConfiguredDerivationActor::Delegate(Box::new(DelegateDerivationActor::new(
+            Ok(ConfiguredDerivationActor::Delegate(Box::new(DelegateDerivationActor::new(
                 QueuedDerivationEngineClient { engine_actor_request_tx },
                 derivation_actor_request_rx,
                 provider,
                 l1_provider,
-            )))
+            ))))
         } else {
-            ConfiguredDerivationActor::Normal(Box::new(DerivationActor::<_, OnlinePipeline>::new(
-                QueuedDerivationEngineClient { engine_actor_request_tx },
-                derivation_actor_request_rx,
-                self.create_pipeline().await,
+            let pipeline = self
+                .create_pipeline()
+                .await
+                .map_err(|error| format!("Failed to initialize L1 blob provider: {error}"))?;
+            Ok(ConfiguredDerivationActor::Normal(Box::new(
+                DerivationActor::<_, OnlinePipeline>::new(
+                    QueuedDerivationEngineClient { engine_actor_request_tx },
+                    derivation_actor_request_rx,
+                    pipeline,
+                ),
             )))
         }
     }
@@ -314,15 +326,19 @@ impl RollupNode {
             Duration::from_secs(FINALIZED_STREAM_POLL_INTERVAL),
         )?;
 
-        Ok(L1WatcherActor::new(
+        let chain = L1WatcherChain::new(
             self.config.clone(),
-            self.l1_config.engine_provider.clone(),
-            l1_query_rx,
-            l1_head_updates_tx,
             QueuedL1WatcherDerivationClient { derivation_actor_request_tx },
             signer_tx,
+            l1_query_rx,
+        );
+
+        Ok(L1WatcherActor::new(
+            self.l1_config.engine_provider.clone(),
+            l1_head_updates_tx,
             head_stream,
             finalized_stream,
+            vec![chain],
         ))
     }
 
@@ -481,7 +497,7 @@ impl RollupNode {
 
         let derivation = self
             .build_derivation_actor(engine_actor_request_tx.clone(), derivation_actor_request_rx)
-            .await;
+            .await?;
 
         // Build and start the libp2p swarm upstream of `NetworkActor::new` so the constructor
         // stays sync.

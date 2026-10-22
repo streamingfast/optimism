@@ -140,7 +140,7 @@ parameters:
     default: false
 
 orbs:
-  utils: ethereum-optimism/circleci-utils@1.0.30
+  utils: ethereum-optimism/circleci-utils@1.0.32
   go: circleci/go@1.8.0
   gcp-cli: circleci/gcp-cli@3.0.1
   slack: circleci/slack@6.0.0
@@ -304,25 +304,35 @@ commands:
         description: "The versions of solc to install"
         type: string
         default: "0.8.15,0.8.19,0.8.25,0.8.28"
+      use_cache:
+        description: Restore and save the solc cache. Disable to download every compiler fresh.
+        type: boolean
+        default: true
     steps:
-      - restore_cache:
-          keys:
-            # use mise.toml to anchor on the underlying forge/svm versions
-            - svm-cache-{{ checksum "mise.toml" }}-<<parameters.solc_versions>>
-            # Fall back to any svm cache for the same forge/svm versions so a
-            # changed solc_versions list reuses what's there and installs only
-            # the difference instead of a full cold install.
-            - svm-cache-{{ checksum "mise.toml" }}-
+      - when:
+          condition: << parameters.use_cache >>
+          steps:
+            - restore_cache:
+                keys:
+                  # use mise.toml to anchor on the underlying forge/svm versions
+                  - svm-cache-{{ checksum "mise.toml" }}-<<parameters.solc_versions>>
+                  # Fall back to any svm cache for the same forge/svm versions so a
+                  # changed solc_versions list reuses what's there and installs only
+                  # the difference instead of a full cold install.
+                  - svm-cache-{{ checksum "mise.toml" }}-
       - run:
           name: Install solc compilers
           command: |
             for version in $(echo "<<parameters.solc_versions>>" | tr ',' '\n'); do
               svm which $version || svm install $version
             done
-      - save_cache:
-          key: svm-cache-{{ checksum "mise.toml" }}-<<parameters.solc_versions>>
-          paths:
-            - ~/.svm
+      - when:
+          condition: << parameters.use_cache >>
+          steps:
+            - save_cache:
+                key: svm-cache-{{ checksum "mise.toml" }}-<<parameters.solc_versions>>
+                paths:
+                  - ~/.svm
 
   install-contracts-dependencies:
     description: "Install the dependencies for the smart contracts"
@@ -331,8 +341,13 @@ commands:
         description: "The versions of solc to install"
         type: string
         default: "0.8.15,0.8.19,0.8.25,0.8.28"
+      use_cache:
+        description: Restore and save the solc cache.
+        type: boolean
+        default: true
     steps:
-      - install-solc-compilers
+      - install-solc-compilers:
+          use_cache: << parameters.use_cache >>
       - run:
           name: Install dependencies
           command: |
@@ -728,7 +743,7 @@ jobs:
     description: "Build a Rust workspace with target directory caching"
     docker:
       - image: <<pipeline.parameters.c-rust_base_image>>
-    resource_class: xlarge.gen2
+    resource_class: << parameters.resource_class >>
     parameters:
       directory:
         description: "Directory containing the Cargo workspace"
@@ -765,6 +780,10 @@ jobs:
         description: "Whether to persist the built binaries to the CircleCI workspace"
         type: boolean
         default: false
+      resource_class:
+        description: "Machine resource class"
+        type: string
+        default: xlarge.gen2
     steps:
       - rust-build:
           directory: << parameters.directory >>
@@ -929,61 +948,90 @@ jobs:
         description: Profile to use for building
         type: string
         default: ci
+      use_caches:
+        description: >-
+          Restore and save the mise, solc, forge build and Go caches. The
+          op-deployer release build disables them so the artifacts it ships don't
+          depend on content an earlier job saved to a cache.
+        type: boolean
+        default: true
     steps:
-      - utils/checkout-with-mise:
-          checkout-method: blobless
-          enable-mise-cache: true
-      - install-contracts-dependencies
+      - when:
+          condition: << parameters.use_caches >>
+          steps:
+            - utils/checkout-with-mise:
+                checkout-method: blobless
+                enable-mise-cache: true
+      - unless:
+          condition: << parameters.use_caches >>
+          steps:
+            - utils/checkout-with-mise:
+                checkout-method: blobless
+                fresh-install: true
+      - install-contracts-dependencies:
+          use_cache: << parameters.use_caches >>
       - run:
           name: Print forge version
           command: forge --version
-      - run:
-          name: Compute forge build cache key
-          command: |
-            # Key over every input affecting forge output: all tracked package
-            # files via `git ls-files -s` (sources, config, lib/ submodule
-            # pins), mise.toml toolchain pins, and profile/args. Exact-key only
-            # (no fallback restore): a hit never serves artifacts for changed
-            # or deleted contracts; a miss is a normal clean build. The
-            # installed solc set is deliberately unkeyed — drift only makes
-            # forge recompile mismatched artifacts, never serve stale ones.
-            {
-              echo "profile=<<parameters.profile>> args=<<parameters.build_args>>"
-              sha256sum mise.toml
-              git ls-files -s -- packages/contracts-bedrock
-            } | sha256sum | cut -d' ' -f1 | tee /tmp/forge-cache-key.txt
-      - restore_cache:
-          name: Restore forge build cache
-          keys:
-            - forge-build-v1-<<parameters.profile>>-{{ checksum "/tmp/forge-cache-key.txt" }}
+      - when:
+          condition: << parameters.use_caches >>
+          steps:
+            - run:
+                name: Compute forge build cache key
+                command: |
+                  # Key over every input affecting forge output: all tracked package
+                  # files via `git ls-files -s` (sources, config, lib/ submodule
+                  # pins), mise.toml toolchain pins, and profile/args. Exact-key only
+                  # (no fallback restore): a hit never serves artifacts for changed
+                  # or deleted contracts; a miss is a normal clean build. The
+                  # installed solc set is deliberately unkeyed — drift only makes
+                  # forge recompile mismatched artifacts, never serve stale ones.
+                  {
+                    echo "profile=<<parameters.profile>> args=<<parameters.build_args>>"
+                    sha256sum mise.toml
+                    git ls-files -s -- packages/contracts-bedrock
+                  } | sha256sum | cut -d' ' -f1 | tee /tmp/forge-cache-key.txt
+            - restore_cache:
+                name: Restore forge build cache
+                keys:
+                  - forge-build-v1-<<parameters.profile>>-{{ checksum "/tmp/forge-cache-key.txt" }}
       - run:
           name: Build contracts
           command: just forge-build <<parameters.build_args>>
           environment:
             FOUNDRY_PROFILE: <<parameters.profile>>
           working_directory: packages/contracts-bedrock
-      - save_cache:
-          name: Save forge build cache
-          key: forge-build-v1-<<parameters.profile>>-{{ checksum "/tmp/forge-cache-key.txt" }}
-          # These paths hold for profiles that keep foundry.toml's default
-          # output dirs; a profile that redirects them (e.g. kprove's
-          # out = kout-proofs) needs this list extended.
-          paths:
-            - packages/contracts-bedrock/cache
-            - packages/contracts-bedrock/artifacts
-            - packages/contracts-bedrock/forge-artifacts
+      - when:
+          condition: << parameters.use_caches >>
+          steps:
+            - save_cache:
+                name: Save forge build cache
+                key: forge-build-v1-<<parameters.profile>>-{{ checksum "/tmp/forge-cache-key.txt" }}
+                # These paths hold for profiles that keep foundry.toml's default
+                # output dirs; a profile that redirects them (e.g. kprove's
+                # out = kout-proofs) needs this list extended.
+                paths:
+                  - packages/contracts-bedrock/cache
+                  - packages/contracts-bedrock/artifacts
+                  - packages/contracts-bedrock/forge-artifacts
       # copy-contract-artifacts runs `go run ... mktar`, which needs the Go
       # module set. Restore the shared cache (warmed by prep-go-modules) so it
       # doesn't hit proxy.golang.org.
-      - go-restore-cache:
-          namespace: contracts-bedrock-build
+      - when:
+          condition: << parameters.use_caches >>
+          steps:
+            - go-restore-cache:
+                namespace: contracts-bedrock-build
       - run:
           name: "Copy artifacts into deployer"
           command: |
             just copy-contract-artifacts
           working_directory: op-deployer
-      - go-save-cache:
-          namespace: contracts-bedrock-build
+      - when:
+          condition: << parameters.use_caches >>
+          steps:
+            - go-save-cache:
+                namespace: contracts-bedrock-build
       - persist_to_workspace:
           root: "."
           paths:
@@ -992,7 +1040,7 @@ jobs:
             - "packages/contracts-bedrock/forge-artifacts"
             - "op-deployer/pkg/deployer/artifacts/forge-artifacts"
       - notify-failures-on-develop:
-          mentions: "@security-oncall"
+          mentions: "<!subteam^S07K486JEH4>"
 
   check-kontrol-build:
     docker:
@@ -1017,7 +1065,7 @@ jobs:
           command: just forge-build ./test/kontrol/proofs
           working_directory: packages/contracts-bedrock
       - notify-failures-on-develop:
-          mentions: "@security-oncall"
+          mentions: "<!subteam^S07K486JEH4>"
 
   contracts-bedrock-tests:
     docker:
@@ -1106,7 +1154,7 @@ jobs:
           command: just lint-forge-tests-check-no-build
           working_directory: packages/contracts-bedrock
       - notify-failures-on-develop:
-          mentions: "@security-oncall"
+          mentions: "<!subteam^S07K486JEH4>"
 
   contracts-bedrock-heavy-fuzz-nightly:
     docker:
@@ -1160,7 +1208,7 @@ jobs:
           path: packages/contracts-bedrock/results
           when: always
       - notify-failures-on-develop:
-          mentions: "@security-oncall"
+          mentions: "<!subteam^S07K486JEH4>"
 
   contracts-bedrock-coverage:
     docker:
@@ -1200,8 +1248,6 @@ jobs:
           name: Print forge version
           command: forge --version
           working_directory: packages/contracts-bedrock
-      - apt-install:
-          packages: "lcov"
       - run:
           name: Resolve L1 archive RPC URL
           command: |
@@ -1255,7 +1301,7 @@ jobs:
           path: packages/contracts-bedrock/failed-test-traces.log
           when: on_fail
       - notify-failures-on-develop:
-          mentions: "@security-oncall"
+          mentions: "<!subteam^S07K486JEH4>"
 
   contracts-bedrock-tests-upgrade:
     parameters:
@@ -1365,7 +1411,7 @@ jobs:
           path: packages/contracts-bedrock/results
           when: always
       - notify-failures-on-develop:
-          mentions: "@security-oncall"
+          mentions: "<!subteam^S07K486JEH4>"
   contracts-bedrock-tests-l2-fork:
     parameters:
       fork_op_chain:
@@ -1497,7 +1543,7 @@ jobs:
           path: packages/contracts-bedrock/results
           when: always
       - notify-failures-on-develop:
-          mentions: "@security-oncall"
+          mentions: "<!subteam^S07K486JEH4>"
 
   contracts-bedrock-upload:
     machine: true
@@ -1548,7 +1594,7 @@ jobs:
           command: just check-fast
           working_directory: packages/contracts-bedrock
       - notify-failures-on-develop:
-          mentions: "@security-oncall"
+          mentions: "<!subteam^S07K486JEH4>"
 
   l2-chains-sync-check:
     docker:
@@ -1571,8 +1617,6 @@ jobs:
       - utils/checkout-with-mise:
           checkout-method: blobless
           enable-mise-cache: true
-      - apt-install:
-          packages: "ripgrep"
       - run:
           name: Check TODO issues
           command: ./ops/scripts/todo-checker.sh --verbose --strict
@@ -1602,6 +1646,9 @@ jobs:
           name: run Go linter
           command: |
             just lint-go
+      - run:
+          name: Test prestate build driver
+          command: mise exec -- ./ops/prestate-reproducibility/test-build-prestates.sh
       - go-save-cache:
           namespace: go-lint
       - save_cache:
@@ -1799,7 +1846,9 @@ jobs:
         default: 1
     docker:
       - image: <<pipeline.parameters.c-default_docker_image>>
-    resource_class: 2xlarge.gen2
+    # Trial one tier down; nproc-based test parallelism falls from 16 to 8 while -p=4
+    # stays fixed. Monitor the 16 GiB limit after a 24.1 GiB cross-branch peak.
+    resource_class: xlarge.gen2
     parallelism: <<parameters.parallelism>>
     steps:
       - utils/checkout-with-mise:
@@ -1820,9 +1869,6 @@ jobs:
           command: |
             <<parameters.environment_overrides>>
             export TEST_TIMEOUT=<<parameters.test_timeout>>
-            # set to less than number CPUs (xlarge Docker is 16 CPU) so there's some buffer for things
-            # like Geth
-            export PARALLEL=12
             just <<parameters.rule>>
       - go-save-cache:
           namespace: go-tests
@@ -1932,6 +1978,10 @@ jobs:
         description: Timeout for when CircleCI kills the job if there's no output
         type: string
         default: 30m
+      resource_class:
+        description: Docker resource class for this acceptance job
+        type: string
+        default: 2xlarge+.gen2
       parallelism:
         description: Number of machines to distribute the tests across
         type: integer
@@ -1943,7 +1993,7 @@ jobs:
         default: ""
     docker:
       - image: <<pipeline.parameters.c-default_docker_image>>
-    resource_class: 2xlarge+.gen2
+    resource_class: <<parameters.resource_class>>
     parallelism: <<parameters.parallelism>>
     steps:
       # apt-install needs the working tree, so it runs after checkout.
@@ -2214,28 +2264,34 @@ jobs:
       - check-changed:
           no_go_deps: "true"
           patterns: contracts-bedrock/test/kontrol,contracts-bedrock/src/L1/OptimismPortal\.sol,contracts-bedrock/src/L1/OptimismPortal2\.sol,contracts-bedrock/src/L1/L1CrossDomainMessenger\.sol,contracts-bedrock/src/L1/L1ERC721Bridge\.sol,contracts-bedrock/src/L1/L1StandardBridge\.sol,contracts-bedrock/src/L1/ResourceMetering\.sol,contracts-bedrock/src/universal/StandardBridge\.sol,contracts-bedrock/src/universal/ERC721Bridge\.sol,contracts-bedrock/src/universal/CrossDomainMessenger\.sol
-      - setup_remote_docker:
-          docker_layer_caching: true
+      - restore-go-mod-cache
+      - setup_remote_docker
       - run:
           name: Run Kontrol Tests
-          command: |
-            curl -X POST \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer $RV_COMPUTE_TOKEN" \
-              https://api.github.com/repos/runtimeverification/optimism-ci/actions/workflows/optimism-ci.yaml/dispatches \
-              -d '{
-                "ref": "master",
-                "inputs": {
-                  "branch_name": "<<pipeline.git.branch>>",
-                  "extra_args": "script",
-                  "statuses_sha": "<< pipeline.git.revision >>",
-                  "org": "ethereum-optimism",
-                  "repository": "optimism"
-                }
-              }'
+          command: timeout --signal=TERM --kill-after=60s 180m just build-go-ffi kontrol-summary-full test-kontrol-no-build
           working_directory: ./packages/contracts-bedrock
-      - notify-failures-on-develop:
-          mentions: "@security-oncall"
+          no_output_timeout: 185m
+      - run:
+          name: Remove duplicate proof archives
+          when: always
+          command: |
+            logs=packages/contracts-bedrock/test/kontrol/logs
+            for archive in "$logs"/results-*.tar.gz; do
+              if cmp -s "$archive" "$logs/kontrol-results_latest.tar.gz"; then
+                rm -- "$archive"
+              fi
+            done
+      - store_test_results:
+          path: packages/contracts-bedrock/test/kontrol/logs
+      - store_artifacts:
+          path: packages/contracts-bedrock/test/kontrol/logs
+      - slack/notify:
+          channel: C03N11M0BBN
+          event: fail
+          template: basic_fail_1
+          branch_pattern: develop
+          mentions: "<!subteam^S07K486JEH4>"
+          ignore_errors: false
 
   publish-contract-artifacts:
     docker:
@@ -2291,21 +2347,39 @@ jobs:
         description: Goreleaser config file
         default: .goreleaser.yaml
         type: string
+      use_caches:
+        description: >-
+          Restore the mise and Go module caches and use Docker layer caching. The
+          op-deployer release disables them so its binary and images are built with
+          freshly installed tools and freshly downloaded modules.
+        type: boolean
+        default: true
     docker:
       - image: <<pipeline.parameters.c-default_docker_image>>
     resource_class: large.gen2
     steps:
       - setup_remote_docker:
-          docker_layer_caching: true
+          docker_layer_caching: << parameters.use_caches >>
       - gcp-cli/install
       - gcp-oidc-authenticate:
           gcp_cred_config_file_path: /tmp/gcp_cred_config.json
           oidc_token_file_path: /tmp/oidc_token.json
-      - utils/checkout-with-mise:
-          enable-mise-cache: true
+      - when:
+          condition: << parameters.use_caches >>
+          steps:
+            - utils/checkout-with-mise:
+                enable-mise-cache: true
+      - unless:
+          condition: << parameters.use_caches >>
+          steps:
+            - utils/checkout-with-mise:
+                fresh-install: true
       - attach_workspace: {at: "."}
       # goreleaser compiles the Go release binaries on the host.
-      - restore-go-mod-cache
+      - when:
+          condition: << parameters.use_caches >>
+          steps:
+            - restore-go-mod-cache
       - run:
           name: Build superchain bundle
           command: just build-superchain-go
@@ -2587,6 +2661,8 @@ workflows:
             - prep-go-modules
           context:
             - circleci-repo-readonly-authenticated-github-token
+      # OP Node retains 20 vCPU / 40 GiB after a 38.5 GiB observed peak; Kona trials
+      # 16 vCPU / 32 GiB after a 21.3 GiB observed peak.
       # IN-MEMORY - op-node/op-reth
       - op-acceptance-tests:
           name: memory-all-opn-op-reth-<<matrix.l1_fork>>
@@ -2618,6 +2694,7 @@ workflows:
               l1_fork: *acceptance_l1_forks
           l2_cl_kind: kona-node
           l2_el_kind: op-reth
+          resource_class: 2xlarge.gen2
           parallelism: 8
           acceptance_test_jobs: "8"
           no_output_timeout: 120m
@@ -2682,6 +2759,7 @@ workflows:
             branches:
               ignore: /.*/
           build_args: --skip test
+          use_caches: false
           context:
             - circleci-repo-readonly-authenticated-github-token
       - go-release:
@@ -2691,6 +2769,7 @@ workflows:
             branches:
               ignore: /.*/
           module: op-deployer
+          use_caches: false
           context:
             - oplabs-gcr-release
             - circleci-repo-readonly-authenticated-github-token
@@ -2815,7 +2894,6 @@ workflows:
       - kontrol-tests:
           context:
             - slack
-            - runtimeverification
             - circleci-repo-readonly-authenticated-github-token
 
   scheduled-cannon-full-tests:

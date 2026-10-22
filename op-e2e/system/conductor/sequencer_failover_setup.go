@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	bss "github.com/ethereum-optimism/optimism/op-batcher/batcher"
@@ -27,7 +26,9 @@ import (
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/driver"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/sync"
-	oplog "github.com/ethereum-optimism/optimism/op-service/log"
+	opclient "github.com/ethereum-optimism/optimism/op-service/client"
+	"github.com/ethereum-optimism/optimism/op-service/log"
+	"github.com/ethereum-optimism/optimism/op-service/log/logcli"
 	"github.com/ethereum-optimism/optimism/op-service/retry"
 	oprpc "github.com/ethereum-optimism/optimism/op-service/rpc"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
@@ -233,7 +234,7 @@ func setupConductor(
 		},
 		RollupCfg:      rollupCfg,
 		RPCEnableProxy: true,
-		LogConfig: oplog.CLIConfig{
+		LogConfig: logcli.CLIConfig{
 			Level: log.LevelDebug,
 			Color: false,
 		},
@@ -262,7 +263,7 @@ func setupConductor(
 		return nil, err
 	}
 	t.Cleanup(rawClient.Close)
-	client := conrpc.NewAPIClient(rawClient)
+	client := conrpc.NewAPIClient(opclient.NewBaseRPCClient(rawClient))
 
 	return &conductor{
 		service: service,
@@ -296,9 +297,9 @@ func setupBatcher(t *testing.T, sys *e2esys.System, conductors map[string]*condu
 		SubSafetyMargin:        4,
 		PollInterval:           1 * time.Second,
 		TxMgrConfig:            setuputils.NewTxMgrConfig(sys.EthInstances["l1"].UserRPC(), sys.Cfg.Secrets.Batcher),
-		LogConfig: oplog.CLIConfig{
+		LogConfig: logcli.CLIConfig{
 			Level:  log.LevelDebug,
-			Format: oplog.FormatText,
+			Format: log.FormatText,
 		},
 		Stopped:                      false,
 		BatchType:                    derive.SpanBatchType,
@@ -387,46 +388,6 @@ func waitForLeadership(t *testing.T, c *conductor) error {
 	return wait.For(ctx, 1*time.Second, condition)
 }
 
-func waitForLeadershipChange(t *testing.T, prev *conductor, prevID string, conductors map[string]*conductor, sys *e2esys.System) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	condition := func() (bool, error) {
-		isLeader, err := prev.client.Leader(ctx)
-		if err != nil {
-			return false, err
-		}
-		return !isLeader, nil
-	}
-
-	err := wait.For(ctx, 1*time.Second, condition)
-	require.NoError(t, err)
-
-	ensureOnlyOneLeader(t, sys, conductors)
-	newLeader, err := prev.client.LeaderWithID(ctx)
-	require.NoError(t, err)
-	require.NotEmpty(t, newLeader.ID)
-	require.NotEqual(t, prevID, newLeader.ID, "Expected a new leader")
-	require.NoError(t, waitForSequencerStatusChange(t, sys.RollupClient(newLeader.ID), true))
-
-	return newLeader.ID
-}
-
-func waitForSequencerStatusChange(t *testing.T, rollupClient *sources.RollupClient, active bool) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	condition := func() (bool, error) {
-		isActive, err := rollupClient.SequencerActive(ctx)
-		if err != nil {
-			return false, err
-		}
-		return isActive == active, nil
-	}
-
-	return wait.For(ctx, 1*time.Second, condition)
-}
-
 func leader(t *testing.T, ctx context.Context, con *conductor) bool {
 	leader, err := con.client.Leader(ctx)
 	require.NoError(t, err)
@@ -479,31 +440,6 @@ func findFollower(t *testing.T, conductors map[string]*conductor) (string, *cond
 		}
 	}
 	return "", nil
-}
-
-func ensureOnlyOneLeader(t *testing.T, sys *e2esys.System, conductors map[string]*conductor) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	condition := func() (bool, error) {
-		leaders := 0
-		for name, con := range conductors {
-			leader, err := con.client.Leader(ctx)
-			if err != nil {
-				continue
-			}
-			active, err := sys.RollupClient(name).SequencerActive(ctx)
-			if err != nil {
-				continue
-			}
-
-			if leader && active {
-				leaders++
-			}
-		}
-		return leaders == 1, nil
-	}
-	require.NoError(t, wait.For(ctx, 1*time.Second, condition))
 }
 
 func memberIDs(membership *consensus.ClusterMembership) []string {

@@ -15,10 +15,10 @@ import (
 	monTypes "github.com/ethereum-optimism/optimism/op-dispute-mon/mon/types"
 	"github.com/ethereum-optimism/optimism/op-service/clock"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
-	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
+	"github.com/ethereum-optimism/optimism/op-service/log"
+	metricstest "github.com/ethereum-optimism/optimism/op-service/metrics/test"
 	"github.com/ethereum-optimism/optimism/op-service/testlog"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
@@ -28,7 +28,7 @@ func TestMonitorMixedFaultAndZKGames(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
 	createdAt := now.Add(-time.Minute)
 	cl := clock.NewDeterministicClock(now)
-	logger := testlog.Logger(t, log.LvlDebug)
+	logger := testlog.Logger(t, log.LevelDebug)
 	metricer := metrics.NewMetrics()
 	actor := common.Address{0xa1}
 	weth := common.Address{0xee}
@@ -174,7 +174,7 @@ func TestMonitorMixedFaultAndZKGames(t *testing.T) {
 	)
 
 	require.NoError(t, monitor.monitorGames())
-	snapshot := opmetrics.NewMetricChecker(t, metricer.Registry())
+	snapshot := metricstest.NewMetricChecker(t, metricer.Registry())
 	requireGauge(t, snapshot, "op_dispute_mon_games", map[string]string{"game_type": gameTypes.SuperCannonKonaGameType.String()}, 1)
 	requireGauge(t, snapshot, "op_dispute_mon_games", map[string]string{"game_type": gameTypes.ZKDisputeGameType.String()}, 1)
 	requireGauge(t, snapshot, "op_dispute_mon_failed_games", nil, 0)
@@ -195,7 +195,7 @@ func TestMonitorMixedFaultAndZKGames(t *testing.T) {
 
 	cl.AdvanceTime(time.Hour + time.Second)
 	require.NoError(t, monitor.monitorGames())
-	snapshot = opmetrics.NewMetricChecker(t, metricer.Registry())
+	snapshot = metricstest.NewMetricChecker(t, metricer.Registry())
 	requireGaugeSum(t, metricer.Registry(), "op_dispute_mon_claims", map[string]string{"resolved": "unresolved", "resolvable": "resolvable"}, 1)
 	requireGauge(t, snapshot, "op_dispute_mon_zk_games_pending_lifecycle_action", map[string]string{"action": "resolution"}, 1)
 	requireGauge(t, snapshot, "op_dispute_mon_zk_games_pending_lifecycle_action", map[string]string{"action": "bond_distribution"}, 0)
@@ -213,8 +213,9 @@ func TestMonitorMixedFaultAndZKGames(t *testing.T) {
 	zkGame.Bonds[0].Recipient = actor
 	zkGame.ExpectedCredits[actor] = zkBond
 	zkGame.Credits[actor] = zkBond
+	zkGame.Finalized = true
 	require.NoError(t, monitor.monitorGames())
-	snapshot = opmetrics.NewMetricChecker(t, metricer.Registry())
+	snapshot = metricstest.NewMetricChecker(t, metricer.Registry())
 	requireGauge(t, snapshot, "op_dispute_mon_games", map[string]string{"game_type": gameTypes.SuperCannonKonaGameType.String()}, 1)
 	requireGauge(t, snapshot, "op_dispute_mon_games", map[string]string{"game_type": gameTypes.ZKDisputeGameType.String()}, 1)
 	requireGauge(t, snapshot, "op_dispute_mon_failed_games", nil, 0)
@@ -240,7 +241,7 @@ func TestMonitorMixedFaultAndZKGames(t *testing.T) {
 	zkGame.Credits[actor] = new(big.Int)
 	zkGame.WithdrawalRequests[actor] = &contracts.WithdrawalRequest{Amount: zkBond, Timestamp: requestTime}
 	require.NoError(t, monitor.monitorGames())
-	snapshot = opmetrics.NewMetricChecker(t, metricer.Registry())
+	snapshot = metricstest.NewMetricChecker(t, metricer.Registry())
 	requireGauge(t, snapshot, "op_dispute_mon_withdrawal_requests", map[string]string{"delayedWETH": weth.Hex(), "credits": "matching"}, 2)
 	requireGauge(t, snapshot, "op_dispute_mon_withdrawal_requests", map[string]string{"delayedWETH": weth.Hex(), "credits": "divergent"}, 0)
 	requireGauge(t, snapshot, "op_dispute_mon_credits", map[string]string{"credit": "expected", "withdrawable": "non_withdrawable"}, 2)
@@ -252,7 +253,7 @@ func TestMonitorMixedFaultAndZKGames(t *testing.T) {
 	requireGauge(t, snapshot, "op_dispute_mon_zk_games_pending_lifecycle_action", map[string]string{"action": "bond_distribution"}, 0)
 }
 
-func requireGauge(t *testing.T, checker *opmetrics.MetricFamiliesChecker, name string, labels map[string]string, expected float64) {
+func requireGauge(t *testing.T, checker *metricstest.MetricFamiliesChecker, name string, labels map[string]string, expected float64) {
 	t.Helper()
 	metric := checker.FindByName(name).FindByLabels(labels)
 	require.NotNil(t, metric.GetGauge(), "metric %s with labels %v is not a gauge", name, labels)

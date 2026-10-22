@@ -9,6 +9,29 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## world-chain-v2.6.0-fh3.1
+
+Moves the world-chain line to upstream `op-reth/v2.6.0` (`da6d3252`), the optimism rev world-chain
+`v2.6.0` pins. The Firehose code is the same as `op-reth-v2.6.1-fh3.1`; `op-reth/v2.6.1` adds only
+three dependency and toolchain security commits on top of `v2.6.0`.
+
+### Changed
+
+* Merged upstream `op-reth/v2.6.0`, which moves reth to v2.5.2 (ethereum-optimism/reth
+  `0fbe4285`), revm to 42 and alloy-evm to 0.38.
+* Reth now comes from `streamingfast/reth` `world-chain-v2.6.0-fh3.1`, which merges `0fbe4285`
+  into `release/world-chain-2.x`.
+* `alloy-evm` now comes from `streamingfast/evm` tag `v0.38.0-sf`, so block traces keep their
+  `systemCalls`.
+* Firehose code changes report the previous code hash and code from revm 42's `CodeChange` journal
+  entry instead of assuming empty code. A contract creation starts from empty code, so its code
+  change is reported as before.
+* `FIRE INIT` and the genesis block are emitted from the node builder's `on_component_initialized`
+  hook, before the consensus engine exists. The genesis block used to be emitted from
+  `on_node_started`, which can run after the engine has traced a block.
+* `reth_optimism_firehose::init_blockchain` now takes the provider and emits both `FIRE INIT` and
+  the genesis block; `emit_genesis_block_if_empty` is removed.
+
 ## world-chain-v2.4.3-fh3.1-3
 
 ### Changed
