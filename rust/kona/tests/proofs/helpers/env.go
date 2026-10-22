@@ -14,13 +14,13 @@ import (
 	e2ecfg "github.com/ethereum-optimism/optimism/op-e2e/config"
 	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum-optimism/optimism/op-service/log"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
 	"github.com/ethereum-optimism/optimism/op-service/testlog"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,7 +49,16 @@ func NewL2FaultProofEnv[c any](t helpers.Testing, testCfg *TestCfg[c], tp *e2eut
 		if testCfg.Hardfork == nil {
 			t.Fatalf("HF not set")
 		}
-		dp.DeployConfig.ActivateForkAtGenesis(forks.Name(testCfg.Hardfork.Name))
+		hardfork := forks.Name(testCfg.Hardfork.Name)
+		if hardfork == forks.Bedrock {
+			// Bedrock is implicit and has no activation offset. Disable only the
+			// schedulable mainline L2 forks, preserving independent fork settings.
+			for _, fork := range forks.From(forks.Regolith) {
+				dp.DeployConfig.SetForkTimeOffset(fork, nil)
+			}
+		} else {
+			dp.DeployConfig.ActivateForkAtGenesis(hardfork)
+		}
 
 		for _, override := range deployConfigOverrides {
 			override(dp.DeployConfig)
@@ -144,15 +153,12 @@ func ExpectError(expectedErr error) CheckResult {
 	}
 }
 
+// WithL2Claim overrides the claimed post-state. For the interop program that is the commitment to
+// the claimed PreState (keccak of its encoding), not a bare output root — so a junk value is still
+// a junk claim, but an honest override has to be built the same way WithSuperDefaults builds it.
 func WithL2Claim(claim common.Hash) FixtureInputParam {
 	return func(f *FixtureInputs) {
 		f.L2Claim = claim
-	}
-}
-
-func WithL2BlockNumber(num uint64) FixtureInputParam {
-	return func(f *FixtureInputs) {
-		f.L2BlockNumber = num
 	}
 }
 
@@ -169,52 +175,57 @@ func WithL2RPCTracker(tracker *L2RPCTracker) FixtureInputParam {
 	}
 }
 
-// WithCorruptClaim instructs the SP1 range executor to corrupt the claimed output root in the
-// generated witness before execution, so the guest rejects it. Used for the invalid-claim
-// (soundness) test path. Has no effect on the native fault-proof program.
+// WithCorruptClaim instructs the SP1 super-range executor to corrupt the claim the guest sees,
+// after witness collection has run on the honest one, so the guest rejects it. Used for the
+// invalid-claim (soundness) test path. Has no effect on the native fault-proof program.
 func WithCorruptClaim() FixtureInputParam {
 	return func(f *FixtureInputs) {
 		f.CorruptClaim = true
 	}
 }
 
-// WithSP1NativeCore instructs the SP1 range executor to generate the witness and then run the
-// shared range-program core natively instead of executing the SP1 ELF. This is useful for broad,
-// faster kona-sp1 coverage; keep at least one default SP1 execute test for ELF/IO smoke coverage.
-// Has no effect on the native fault-proof program.
+// WithSP1NativeCore instructs the SP1 super-range executor to collect the witnesses and then
+// replay them through the shared native cores instead of executing the SP1 ELF. This is useful for
+// broad, faster kona-sp1 coverage; keep at least one default SP1 execute test for ELF/IO smoke
+// coverage. Has no effect on the native fault-proof program.
 func WithSP1NativeCore() FixtureInputParam {
 	return func(f *FixtureInputs) {
 		f.SP1NativeCore = true
 	}
 }
 
-// RunFaultProofProgram runs the fault proof program for each state transition from genesis up to the provided l2 block num.
+// RunFaultProofProgramFromGenesis runs the fault proof program for each state transition from
+// genesis up to the provided l2 block num.
 func (env *L2FaultProofEnv) RunFaultProofProgramFromGenesis(t helpers.Testing, finalL2BlockNum uint64, checkResult CheckResult, fixtureInputParams ...FixtureInputParam) {
-	l2ClaimBlockNum := uint64(0)
-	for l2ClaimBlockNum <= finalL2BlockNum { // l2ClaimBlockNum = 0, finalL2BlockNum = 0 is a valid case
-		defaultParam := WithPreInteropDefaults(t, l2ClaimBlockNum, env.Sequencer.L2Verifier, env.Engine)
-		combinedParams := []FixtureInputParam{defaultParam}
-		combinedParams = append(combinedParams, fixtureInputParams...)
-		RunFaultProofProgram(t, env.log, env.Miner, checkResult, combinedParams...)
-		l2ClaimBlockNum++
+	genesisBlockNum := env.Sd.RollupCfg.Genesis.L2.Number
+	for l2ClaimBlockNum := genesisBlockNum + 1; l2ClaimBlockNum <= finalL2BlockNum; l2ClaimBlockNum++ {
+		env.RunFaultProofProgram(t, l2ClaimBlockNum, checkResult, fixtureInputParams...)
 	}
 }
 
 // RunFaultProofProgram runs the fault proof program for a single state transition, from the provided l2 block num - 1 to the provided l2 block num.
 func (env *L2FaultProofEnv) RunFaultProofProgram(t helpers.Testing, l2ClaimBlockNum uint64, checkResult CheckResult, fixtureInputParams ...FixtureInputParam) {
-	defaultParam := WithPreInteropDefaults(t, l2ClaimBlockNum, env.Sequencer.L2Verifier, env.Engine)
+	defaultParam := WithSuperDefaults(t, l2ClaimBlockNum, env.Sequencer.L2Verifier, env.Engine)
 	combinedParams := []FixtureInputParam{defaultParam}
 	combinedParams = append(combinedParams, fixtureInputParams...)
 	RunFaultProofProgram(t, env.log, env.Miner, checkResult, combinedParams...)
 }
 
-// RunSP1RangeProgram runs the kona-sp1 range guest in SP1 execute mode for a single state
-// transition, from the provided l2 block num - 1 to the provided l2 block num.
-func (env *L2FaultProofEnv) RunSP1RangeProgram(t helpers.Testing, l2ClaimBlockNum uint64, checkResult CheckResult, fixtureInputParams ...FixtureInputParam) {
-	defaultParam := WithPreInteropDefaults(t, l2ClaimBlockNum, env.Sequencer.L2Verifier, env.Engine)
-	combinedParams := []FixtureInputParam{defaultParam}
+// RunSP1SuperRangeProgram runs the kona-sp1 super-range guest in SP1 execute mode over the
+// super-root transition into the provided l2 block num.
+//
+// The executor is a separate process that resolves the transition itself from
+// `superroot_atTimestamp`, so this serves the verifier's superroot API over loopback HTTP and
+// hands it that address. WithSuperDefaults still supplies the claimed timestamp and the L2 source
+// endpoints; its agreed pre-state and claim go unused on this path.
+func (env *L2FaultProofEnv) RunSP1SuperRangeProgram(t helpers.Testing, l2ClaimBlockNum uint64, checkResult CheckResult, fixtureInputParams ...FixtureInputParam) {
+	l2 := env.Sequencer.L2Verifier
+	combinedParams := []FixtureInputParam{
+		WithSuperDefaults(t, l2ClaimBlockNum, l2, env.Engine),
+		WithSupernode(l2.StartSuperRootHTTPRPC(t)),
+	}
 	combinedParams = append(combinedParams, fixtureInputParams...)
-	RunSP1RangeProgram(t, env.log, env.Miner, checkResult, combinedParams...)
+	RunSP1SuperRangeProgram(t, env.log, env.Miner, checkResult, combinedParams...)
 }
 
 type TestParam func(p *e2eutils.TestParams)

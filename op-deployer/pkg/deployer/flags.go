@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/state"
 
 	op_service "github.com/ethereum-optimism/optimism/op-service"
-	oplog "github.com/ethereum-optimism/optimism/op-service/log"
+	"github.com/ethereum-optimism/optimism/op-service/log/logcli"
 	"github.com/urfave/cli/v2"
 )
 
@@ -148,13 +148,14 @@ var (
 		Name: GenesisTimeOffsetFlagName,
 		Usage: "Offset in seconds added to the L1 anchor block's timestamp to produce the committed L2 genesis " +
 			"timestamp. Must cover the runtime of the off-chain pipeline between anchor selection and OPCM.deploy " +
-			"landing on L1, including the prestate build.",
+			"landing on L1, including the prestate build. " +
+			fmt.Sprintf("Must be at least %d seconds.", standard.MinGenesisTimeOffsetSeconds),
 		EnvVars: PrefixEnvVar("GENESIS_TIME_OFFSET"),
 		Value:   standard.DefaultGenesisTimeOffsetSeconds,
 	}
 )
 
-var GlobalFlags = append([]cli.Flag{CacheDirFlag}, oplog.CLIFlags(EnvVarPrefix)...)
+var GlobalFlags = append([]cli.Flag{CacheDirFlag}, logcli.CLIFlags(EnvVarPrefix)...)
 
 var InitFlags = []cli.Flag{
 	L1ChainIDFlag,

@@ -16,10 +16,12 @@ import { Deploy } from "scripts/deploy/Deploy.s.sol";
 import { Config } from "scripts/libraries/Config.sol";
 
 // Libraries
-import { GameType, GameTypes, Claim, Proposal, Hash } from "src/dispute/lib/Types.sol";
+import { GameType, GameTypes, Claim } from "src/dispute/lib/Types.sol";
 import { EIP1967Helper } from "test/mocks/EIP1967Helper.sol";
 import { LibString } from "@solady/utils/LibString.sol";
 import { LibGameArgs } from "src/dispute/lib/LibGameArgs.sol";
+import { SemverComp } from "src/libraries/SemverComp.sol";
+import { Constants } from "src/libraries/Constants.sol";
 
 // Interfaces
 import { ISuperchainConfig } from "interfaces/L1/ISuperchainConfig.sol";
@@ -244,8 +246,6 @@ contract ForkL1Live is Deployer, StdAssertions, FeatureFlags {
     /// @param _opcm The OPCM V2 contract to upgrade.
     /// @param _delegateCaller The address of the upgrader to use for the upgrade.
     function _doUpgradeV2(IOPContractsManagerV2 _opcm, address _delegateCaller) internal {
-        ISystemConfig systemConfig = ISystemConfig(artifacts.mustGetAddress("SystemConfigProxy"));
-
         // Get the SuperchainPAO address.
         ISuperchainConfig superchainConfig = ISuperchainConfig(artifacts.mustGetAddress("SuperchainConfigProxy"));
         IProxyAdmin superchainProxyAdmin = IProxyAdmin(EIP1967Helper.getAdmin(address(superchainConfig)));
@@ -273,16 +273,21 @@ contract ForkL1Live is Deployer, StdAssertions, FeatureFlags {
             );
         }
 
+        ISystemConfig systemConfig = ISystemConfig(artifacts.mustGetAddress("SystemConfigProxy"));
+
         IDisputeGameFactory disputeGameFactory =
             IDisputeGameFactory(artifacts.mustGetAddress("DisputeGameFactoryProxy"));
 
-        // Prepare the upgrade input based on whether we're doing a super root migration.
+        // Prepare the current upgrade input after all historical upgrades.
         IOPContractsManagerUtils.DisputeGameConfig[] memory disputeGameConfigs;
         IOPContractsManagerUtils.ExtraInstruction[] memory extraInstructions;
 
+        bool permitLockboxDeployment = SemverComp.parse(_opcm.version()).major == 9;
+
         if (Config.devFeatureSuperRootGamesMigration()) {
             // Read the current respected game type from the ASR.
-            IAnchorStateRegistry asr = IAnchorStateRegistry(artifacts.mustGetAddress("AnchorStateRegistryProxy"));
+            IOptimismPortal2 portal = IOptimismPortal2(artifacts.mustGetAddress("OptimismPortalProxy"));
+            IAnchorStateRegistry asr = portal.anchorStateRegistry();
             GameType originalGameType = asr.respectedGameType();
             bool isPermissionless = _isPermissionlessGameType(originalGameType);
             address proposer = DisputeGames.permissionedGameProposer(disputeGameFactory);
@@ -290,11 +295,8 @@ contract ForkL1Live is Deployer, StdAssertions, FeatureFlags {
             // Determine the target SUPER_* game type.
             GameType targetGameType = isPermissionless ? GameTypes.SUPER_CANNON_KONA : GameTypes.SUPER_PERMISSIONED;
 
-            // Read the current anchor root sequence number so we can set a higher one.
-            (, uint256 currentAnchorSeqNum) = asr.getAnchorRoot();
-
-            // Migration upgrade: legacy types disabled, super types enabled.
-            // Order must match validGameTypes in OPContractsManagerV2._assertValidFullConfig().
+            // Legacy types are disabled. Super types are enabled.
+            // Order must match VALID_GAME_TYPES in OPContractsManagerV2._assertValidFullConfig().
             disputeGameConfigs = new IOPContractsManagerUtils.DisputeGameConfig[](6);
             disputeGameConfigs[0] = IOPContractsManagerUtils.DisputeGameConfig({
                 enabled: false,
@@ -346,15 +348,9 @@ contract ForkL1Live is Deployer, StdAssertions, FeatureFlags {
                 gameArgs: hex""
             });
 
-            // Migration needs 2 extra instructions: anchor root + game type overrides.
-            extraInstructions = new IOPContractsManagerUtils.ExtraInstruction[](2);
+            // V9 preserves the super-root anchor established by v8.
+            extraInstructions = new IOPContractsManagerUtils.ExtraInstruction[](permitLockboxDeployment ? 2 : 1);
             extraInstructions[0] = IOPContractsManagerUtils.ExtraInstruction({
-                key: "overrides.cfg.startingAnchorRoot",
-                data: abi.encode(
-                    Proposal({ root: Hash.wrap(keccak256("migrationAnchorRoot")), l2SequenceNumber: currentAnchorSeqNum + 1 })
-                )
-            });
-            extraInstructions[1] = IOPContractsManagerUtils.ExtraInstruction({
                 key: "overrides.cfg.startingRespectedGameType",
                 data: abi.encode(targetGameType)
             });
@@ -362,7 +358,7 @@ contract ForkL1Live is Deployer, StdAssertions, FeatureFlags {
             address challenger = DisputeGames.permissionedGameChallenger(disputeGameFactory);
             address proposer = DisputeGames.permissionedGameProposer(disputeGameFactory);
             // Standard upgrade path: CANNON disabled, remaining legacy types enabled, super types disabled.
-            // Order must match validGameTypes in OPContractsManagerV2._assertValidFullConfig().
+            // Order must match VALID_GAME_TYPES in OPContractsManagerV2._assertValidFullConfig().
             uint256 cannonKonaInitBond = DisputeGames.permissionlessGameInitBondForUpgrade(
                 disputeGameFactory, GameTypes.CANNON_KONA, DEFAULT_PERMISSIONLESS_INIT_BOND
             );
@@ -415,8 +411,16 @@ contract ForkL1Live is Deployer, StdAssertions, FeatureFlags {
                 gameArgs: hex""
             });
 
-            // The standard upgrade path deploys no proxies, so it needs no extra instructions.
-            extraInstructions = new IOPContractsManagerUtils.ExtraInstruction[](0);
+            // The standard upgrade path only needs lockbox deployment permission in v9.
+            extraInstructions = new IOPContractsManagerUtils.ExtraInstruction[](permitLockboxDeployment ? 1 : 0);
+        }
+
+        // Chains without a lockbox need permission to deploy one. Existing lockboxes are reused.
+        if (permitLockboxDeployment) {
+            extraInstructions[extraInstructions.length - 1] = IOPContractsManagerUtils.ExtraInstruction({
+                key: Constants.PERMITTED_PROXY_DEPLOYMENT_KEY,
+                data: bytes("ETHLockbox")
+            });
         }
 
         vm.prank(_delegateCaller, true);

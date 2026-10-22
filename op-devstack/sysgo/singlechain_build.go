@@ -2,6 +2,7 @@ package sysgo
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum-optimism/optimism/op-chain-ops/devkeys"
 	"github.com/ethereum-optimism/optimism/op-core/interop/depset"
@@ -29,11 +29,13 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/dial"
 	"github.com/ethereum-optimism/optimism/op-service/endpoint"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
-	oplog "github.com/ethereum-optimism/optimism/op-service/log"
+	"github.com/ethereum-optimism/optimism/op-service/log"
+	"github.com/ethereum-optimism/optimism/op-service/log/logcli"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum-optimism/optimism/op-service/oppprof"
 	"github.com/ethereum-optimism/optimism/op-service/retry"
 	oprpc "github.com/ethereum-optimism/optimism/op-service/rpc"
+	opsigner "github.com/ethereum-optimism/optimism/op-service/signer"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
 	sequencerConfig "github.com/ethereum-optimism/optimism/op-test-sequencer/config"
 	testmetrics "github.com/ethereum-optimism/optimism/op-test-sequencer/metrics"
@@ -58,45 +60,6 @@ type testSequencer struct {
 	jwtSecret  [32]byte
 	controlRPC map[eth.ChainID]string
 	service    *sequencer.Service
-}
-
-func buildSingleChainWorld(t devtest.T, keys devkeys.Keys, localContractArtifactsPath string, deployerOpts ...DeployerOption) (*L1Network, *L2Network) {
-	wb := &worldBuilder{
-		p:       t,
-		logger:  t.Logger(),
-		require: t.Require(),
-		keys:    keys,
-		builder: intentbuilder.New(),
-	}
-
-	applyConfigLocalContractSources(t, keys, wb.builder, localContractArtifactsPath)
-	applyConfigCommons(t, keys, DefaultL1ID, wb.builder)
-	applyConfigPrefundedL2(t, keys, DefaultL1ID, DefaultL2AID, wb.builder)
-	applyConfigDeployerOptions(t, keys, wb.builder, deployerOpts)
-	wb.Build()
-
-	t.Require().Len(wb.l2Chains, 1, "expected exactly one L2 chain in single-chain world")
-	l2ID := wb.l2Chains[0]
-	l1ID := eth.ChainIDFromUInt64(wb.output.AppliedIntent.L1ChainID)
-
-	l1Net := &L1Network{
-		name:      "l1",
-		chainID:   l1ID,
-		genesis:   wb.outL1Genesis,
-		blockTime: 6,
-	}
-	l2Net := &L2Network{
-		name:       "l2a",
-		chainID:    l2ID,
-		l1ChainID:  l1ID,
-		genesis:    wb.outL2Genesis[l2ID],
-		rollupCfg:  wb.outL2RollupCfg[l2ID],
-		deployment: wb.outL2Deployment[l2ID],
-		opcmImpl:   wb.output.ImplementationsDeployment.OpcmV2Impl,
-		mipsImpl:   wb.output.ImplementationsDeployment.MipsImpl,
-		keys:       keys,
-	}
-	return l1Net, l2Net
 }
 
 func applyConfigLocalContractSources(t devtest.T, _ devkeys.Keys, builder intentbuilder.Builder, artifactsPath string) {
@@ -279,6 +242,17 @@ type l2CLNodeStartConfig struct {
 	SequencerStopped bool
 }
 
+// renewableP2PSignerSetup mints a fresh signer on every SetupSigner call, so
+// an op-node that is stopped and started again (which closes the previous
+// signer) can keep signing gossip after the restart.
+type renewableP2PSignerSetup struct {
+	priv *ecdsa.PrivateKey
+}
+
+func (s *renewableP2PSignerSetup) SetupSigner(context.Context) (p2p.Signer, error) {
+	return opsigner.NewLocalSigner(s.priv), nil
+}
+
 func startL2CLNode(
 	t devtest.T,
 	keys devkeys.Keys,
@@ -343,10 +317,10 @@ func startL2CLNode(
 	if cfg.IsSequencer {
 		p2pKey, err := keys.Secret(devkeys.SequencerP2PRole.Key(l2Net.ChainID().ToBig()))
 		require.NoError(err, "need p2p key for sequencer")
-		p2pKeyHex := hex.EncodeToString(crypto.FromECDSA(p2pKey))
-		require.NoError(fs.Set(opNodeFlags.SequencerP2PKeyName, p2pKeyHex))
-		p2pSignerSetup, err = p2pcli.LoadSignerSetup(cliCtx, logger)
-		require.NoError(err, "failed to load p2p signer")
+		// Not a PreparedSigner: the node closes its signer on shutdown, and a
+		// PreparedSigner would hand the closed instance back to a restarted
+		// node, leaving it unable to sign gossip ("signer is closed").
+		p2pSignerSetup = &renewableP2PSignerSetup{priv: p2pKey}
 	}
 	p2pConfig, err := p2pcli.NewConfig(cliCtx, l2Net.rollupCfg.BlockTime)
 	require.NoError(err, "failed to load p2p config")
@@ -592,9 +566,9 @@ func startTestSequencer(
 		PprofConfig: oppprof.CLIConfig{
 			ListenEnabled: false,
 		},
-		LogConfig: oplog.CLIConfig{
+		LogConfig: logcli.CLIConfig{
 			Level:  log.LevelDebug,
-			Format: oplog.FormatText,
+			Format: log.FormatText,
 		},
 		RPC: oprpc.CLIConfig{
 			ListenAddr:  "127.0.0.1",

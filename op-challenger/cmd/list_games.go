@@ -19,7 +19,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/clock"
 	"github.com/ethereum-optimism/optimism/op-service/dial"
 	openum "github.com/ethereum-optimism/optimism/op-service/enum"
-	oplog "github.com/ethereum-optimism/optimism/op-service/log"
+	"github.com/ethereum-optimism/optimism/op-service/log/logcli"
 	"github.com/ethereum-optimism/optimism/op-service/sources/batching"
 	"github.com/ethereum-optimism/optimism/op-service/sources/batching/rpcblock"
 	"github.com/ethereum/go-ethereum/common"
@@ -129,7 +129,8 @@ func listGames(ctx context.Context, caller *batching.MultiCaller, factory *contr
 			infos[idx].status = metadata.Status
 			infos[idx].l2BlockNum = metadata.L2SequenceNum
 			infos[idx].rootClaim = metadata.ProposedRoot
-			if fdg, ok := gameContract.(contracts.FaultDisputeGameContract); ok {
+			if fdg, ok := gameContract.(contracts.FaultDisputeGameContract); ok &&
+				types.GameType(game.GameType) != types.SuperPermissionedGameType {
 				claimCount, err := fdg.GetClaimCount(ctx)
 				if err != nil {
 					infos[idx].err = fmt.Errorf("failed to retrieve claim count for game %v: %w", gameProxy, err)
@@ -236,7 +237,7 @@ func listGamesFlags() []cli.Flag {
 		flags.FactoryAddressFlag,
 		flags.GameWindowFlag,
 	}
-	cliFlags = append(cliFlags, oplog.CLIFlags(flags.EnvVarPrefix)...)
+	cliFlags = append(cliFlags, logcli.CLIFlags(flags.EnvVarPrefix)...)
 	return cliFlags
 }
 

@@ -17,7 +17,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
 	github.com/ethereum-optimism/go-ethereum-hdwallet v0.1.4-0.20251001155152-4eb15ccedf7e
-	github.com/ethereum-optimism/superchain-registry/validation v0.0.0-20260611202829-ac4e48516794
+	github.com/ethereum-optimism/superchain-registry/validation v0.0.0-20260917213257-bd6236e8d0bb
 	github.com/ethereum/go-ethereum v1.17.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/golang/snappy v1.0.0
@@ -50,7 +50,7 @@ require (
 	go.etcd.io/bbolt v1.3.6
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/trace v1.44.0
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/mod v0.40.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/term v0.45.0
@@ -78,7 +78,6 @@ require (
 	github.com/pion/mdns/v2 v2.0.7 // indirect
 	github.com/pion/srtp/v3 v3.0.6 // indirect
 	github.com/pion/stun v0.6.1 // indirect
-	github.com/pion/stun/v2 v2.0.0 // indirect
 	github.com/pion/stun/v3 v3.1.5 // indirect
 	github.com/pion/transport/v4 v4.0.2 // indirect
 	github.com/pion/turn/v4 v4.0.2 // indirect
@@ -244,7 +243,7 @@ require (
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
-replace github.com/ethereum/go-ethereum => github.com/ethereum-optimism/op-geth v1.101702.3-rc.6
+replace github.com/ethereum/go-ethereum => github.com/ethereum-optimism/op-geth v1.101702.3-rc.7
 
 // replace github.com/ethereum/go-ethereum => ../op-geth
 

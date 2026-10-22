@@ -3,17 +3,17 @@ package presets
 import (
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/ethereum-optimism/optimism/op-chain-ops/devkeys"
 	challengerConfig "github.com/ethereum-optimism/optimism/op-challenger/config"
 	"github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/dsl"
 	"github.com/ethereum-optimism/optimism/op-devstack/dsl/proofs"
+	"github.com/ethereum-optimism/optimism/op-devstack/dsl/zkproposer"
 	"github.com/ethereum-optimism/optimism/op-devstack/sysgo"
 	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils/intentbuilder"
 	"github.com/ethereum-optimism/optimism/op-service/clock"
+	"github.com/ethereum-optimism/optimism/op-service/log"
 )
 
 type SingleChainInterop struct {
@@ -42,8 +42,7 @@ type SingleChainInterop struct {
 	// May be nil if not using sysgo
 	challengerConfig              *challengerConfig.Config
 	zkChallengerSuperRootRPCProxy *sysgo.StallableProxy
-	startZKProposer               func()
-	zkMetricsAddr                 func() string
+	sysgoRuntime                  *sysgo.MultiChainRuntime
 }
 
 func (s *SingleChainInterop) L2Networks() []*dsl.L2Network {
@@ -68,18 +67,9 @@ func (s *SingleChainInterop) AdvanceTime(amount time.Duration) {
 
 // StartZKProposer starts the kona-sp1-proposer after a system configured with
 // WithZK and WithoutHonestProposer has seeded its initial dispute games.
-func (s *SingleChainInterop) StartZKProposer() {
-	s.T.Require().NotNil(s.startZKProposer, "ZK proposer is not configured")
-	s.startZKProposer()
-}
-
-// ZKProposerMetricsURL returns the proposer's Prometheus scrape URL. It
-// requires WithZKProposerOption(sysgo.WithZKMetrics()).
-func (s *SingleChainInterop) ZKProposerMetricsURL() string {
-	s.T.Require().NotNil(s.zkMetricsAddr, "ZK proposer is not configured")
-	addr := s.zkMetricsAddr()
-	s.T.Require().NotEmpty(addr, "no ZK proposer metrics endpoint; pass sysgo.WithZKMetrics()")
-	return "http://" + addr + "/metrics"
+func (s *SingleChainInterop) StartZKProposer() *zkproposer.ZKProposer {
+	s.T.Require().NotNil(s.sysgoRuntime, "ZK proposer controls require a sysgo-backed preset")
+	return zkproposer.New(s.T, s.sysgoRuntime.StartZKProposer(s.T))
 }
 
 // ZKChallengerSuperRootRPCProxy returns the proxy in front of the live ZK
@@ -115,6 +105,24 @@ func (s *SimpleInterop) proofValidationContext() (devtest.T, *dsl.L1ELNode, []*d
 	return s.T, s.L1EL, s.L2Networks()
 }
 
+type ThreeChainInterop struct {
+	*SimpleInterop
+
+	L2ChainC   *dsl.L2Network
+	L2BatcherC *dsl.L2Batcher
+	L2ELC      *dsl.L2ELNode
+	L2CLC      *dsl.L2CLNode
+	FunderC    *dsl.FunderEOA
+}
+
+func (s *ThreeChainInterop) L2Networks() []*dsl.L2Network {
+	return []*dsl.L2Network{s.L2ChainA, s.L2ChainB, s.L2ChainC}
+}
+
+func (s *ThreeChainInterop) proofValidationContext() (devtest.T, *dsl.L1ELNode, []*dsl.L2Network) {
+	return s.T, s.L1EL, s.L2Networks()
+}
+
 // Supernode returns the op-supernode backing this system's super roots. SimpleInterop
 // is always supernode-backed, so this exposes supernode-only test controls (e.g.
 // interop pause/resume) that are not part of the SuperRootSource interface.
@@ -133,6 +141,12 @@ func (s *SingleChainInterop) StandardBridge(l2Chain *dsl.L2Network) *dsl.Standar
 func NewSimpleInterop(t devtest.T, opts ...Option) *SimpleInterop {
 	presetCfg, _ := collectSupportedPresetConfig(t, "NewSimpleInterop", opts, twoL2SupernodeProofsPresetSupportedOptionKinds)
 	return simpleInteropFromSupernodeProofsRuntime(t, sysgo.NewTwoL2SupernodeProofsRuntimeWithConfig(t, true, presetCfg))
+}
+
+// NewThreeChainInterop creates a three-chain supernode proofs system.
+func NewThreeChainInterop(t devtest.T, opts ...Option) *ThreeChainInterop {
+	presetCfg, _ := collectSupportedPresetConfig(t, "NewThreeChainInterop", opts, twoL2SupernodeProofsPresetSupportedOptionKinds)
+	return threeChainInteropFromSupernodeProofsRuntime(t, sysgo.NewThreeL2SupernodeProofsRuntimeWithConfig(t, true, presetCfg))
 }
 
 // NewSingleChainInterop creates a fresh SingleChainInterop target for the

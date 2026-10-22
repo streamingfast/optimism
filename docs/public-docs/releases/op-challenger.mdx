@@ -15,7 +15,42 @@ diataxis: reference
 
 **op-challenger** is a modular dispute game agent that monitors and challenges invalid fault proof games on-chain. See the [fault proof specs](https://specs.optimism.io/fault-proof/index.html).
 
-<Update label="July 22, 2026" description="v1.9.4" tags={["Latest", "Stable"]}>
+<Update label="September 25, 2026" description="v1.10.0" tags={["Latest", "Stable"]}>
+
+## Overview
+
+> [!IMPORTANT]
+> This is a recommended release for all op-challenger operators. It rebuilds the image on a patched base that resolves a zlib CVE, and includes groundwork for ZK proofs, which are not yet running in production.
+
+[View full release on GitHub →](https://github.com/ethereum-optimism/optimism/releases/tag/op-challenger/v1.10.0)
+
+</Update>
+
+<Update label="September 15, 2026" description="v1.9.6" tags={["Stable"]}>
+
+## Overview
+
+> [!IMPORTANT]
+> This is a recommended release for all op-challenger operators. It fixes `list-games` against factories containing super permissioned games, tightens transaction decoding in the bundled kona-host, and updates the container base image to clear a reported CVE.
+
+[View full release on GitHub →](https://github.com/ethereum-optimism/optimism/releases/tag/op-challenger/v1.9.6)
+
+</Update>
+
+<Update label="September 4, 2026" description="v1.9.5" tags={["Stable"]}>
+
+## Overview
+
+> [!NOTE]
+> This is a patch release of op-challenger containing bug fixes, dependency updates, and a change to the default game types. It is a recommended upgrade for all users.
+
+Note: super dispute games (interop) are coming in Upgrade 20, and ZK dispute games in a future upgrade. Changes to those code paths in this release are preparation for that functionality and do not affect operators today.
+
+[View full release on GitHub →](https://github.com/ethereum-optimism/optimism/releases/tag/op-challenger/v1.9.5)
+
+</Update>
+
+<Update label="July 22, 2026" description="v1.9.4" tags={["Stable"]}>
 
 ## Overview
 

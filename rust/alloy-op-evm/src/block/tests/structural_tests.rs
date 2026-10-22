@@ -168,6 +168,80 @@ fn canonicalized_result_gas_applies_refund_exactly_once() {
 }
 
 #[test]
+fn sdm_refund_can_reduce_canonical_gas_across_eip7623_floor() {
+    let tx = calldata_floor_test_tx();
+    let (evm_gas_used, floor_gas, native_evm_refund) = {
+        let mut fixture =
+            JovianExecutorFixture::new(DEFAULT_DA_FOOTPRINT_GAS_SCALAR, 500_000, JOVIAN_TIMESTAMP);
+        fixture.db = prepare_calldata_floor_db();
+        let mut executor = fixture.executor();
+        let output =
+            executor.execute_transaction_without_commit(&tx).expect("floor probe executes");
+        let gas = output.inner.result.result.gas();
+        (output.evm_gas_used, gas.floor_gas(), gas.inner_refunded())
+    };
+    assert!(floor_gas > 0, "Jovian transaction must compute an EIP-7623 floor");
+    assert!(native_evm_refund > 0, "test transaction must earn a native EVM refund");
+    let gas_above_floor = evm_gas_used
+        .checked_sub(floor_gas)
+        .expect("test transaction executes above its calldata floor");
+    assert!(gas_above_floor > 1, "test needs room on both sides of the floor");
+
+    for (case, refund, expected_canonical_gas) in [
+        ("above floor", gas_above_floor - 1, floor_gas + 1),
+        ("at floor", gas_above_floor, floor_gas),
+        ("below floor", gas_above_floor + 1, floor_gas - 1),
+    ] {
+        let entries = vec![SDMGasEntry { index: 0, gas_refund: refund }];
+        let mut fixture =
+            JovianExecutorFixture::new(DEFAULT_DA_FOOTPRINT_GAS_SCALAR, 500_000, JOVIAN_TIMESTAMP);
+        fixture.db = prepare_calldata_floor_db();
+        let mut verifier = fixture.verifier(0, entries.clone());
+
+        let output = verifier
+            .execute_transaction_without_commit(&tx)
+            .unwrap_or_else(|err| panic!("{case}: refunded transaction executes: {err}"));
+        assert_eq!(output.evm_gas_used, evm_gas_used, "{case}: raw gas remains unchanged");
+        assert_eq!(
+            output.canonical_gas_used, expected_canonical_gas,
+            "{case}: canonical gas is raw EVM gas minus the complete SDM refund"
+        );
+        let result_gas = output.inner.result.result.gas();
+        assert_eq!(
+            result_gas.tx_gas_used(),
+            expected_canonical_gas,
+            "{case}: generic execution-result gas must agree with canonical gas"
+        );
+        assert_eq!(
+            result_gas.inner_refunded(),
+            native_evm_refund,
+            "{case}: SDM must not alter the EVM's own refund counter"
+        );
+        assert_eq!(
+            result_gas.floor_gas(),
+            floor_gas.saturating_sub(refund),
+            "{case}: the post-EVM SDM refund must discount the stored floor too"
+        );
+
+        verifier.commit_transaction(output);
+        let post_exec = recovered_post_exec(0, entries);
+        verifier.execute_transaction(&post_exec).expect("post-exec transaction verifies");
+        let (_, result) = verifier.finish().expect("floor-bound block finishes");
+        assert_eq!(result.gas_used, expected_canonical_gas, "{case}: block gas");
+        assert_eq!(
+            result.receipts[0].cumulative_gas_used(),
+            expected_canonical_gas,
+            "{case}: user receipt cumulative gas"
+        );
+        assert_eq!(
+            result.receipts[1].cumulative_gas_used(),
+            expected_canonical_gas,
+            "{case}: zero-gas PostExec receipt inherits canonical cumulative gas"
+        );
+    }
+}
+
+#[test]
 fn fixed_policy_producer_verifier_roundtrip() {
     let tx = observer_test_tx();
     let mut producer_db = prepare_observer_db();
@@ -327,21 +401,28 @@ fn fixed_policy_tracks_pre_refund_gas() {
 }
 
 #[derive(Debug, Clone, Default)]
-struct ErroringRefundPolicy {
+struct FaultyRefundPolicy {
     block_state: u64,
+    kind: Option<PostExecTxKind>,
 }
 
-impl PostExecRefundInspector for ErroringRefundPolicy {
-    type Snapshot = u64;
+impl PostExecRefundInspector for FaultyRefundPolicy {
+    type Snapshot = (u64, Option<PostExecTxKind>);
 
-    fn begin_tx(&mut self, _ctx: PostExecTxContext) {
+    fn begin_tx(&mut self, ctx: PostExecTxContext) {
         self.block_state += 1;
+        self.kind = Some(ctx.kind);
     }
 
     fn note_account_touch(&mut self, _address: Address) {}
 
     fn finish_tx(&mut self) -> PostExecExecutedTx {
-        PostExecExecutedTx { refund_total: u64::MAX, refund_events: Vec::new() }
+        let refund_total = match self.kind.take() {
+            Some(PostExecTxKind::Normal) => u64::MAX,
+            Some(PostExecTxKind::Deposit) => 1,
+            _ => 0,
+        };
+        PostExecExecutedTx { refund_total, refund_events: Vec::new() }
     }
 
     fn inspect_step<CTX>(&mut self, _interp: &mut Interpreter, _context: &mut CTX)
@@ -385,28 +466,117 @@ impl PostExecRefundInspector for ErroringRefundPolicy {
     fn inspect_selfdestruct(&mut self, _contract: Address, _target: Address, _value: U256) {}
 
     fn snapshot(&self) -> Self::Snapshot {
-        self.block_state
+        (self.block_state, self.kind)
     }
 
     fn restore(&mut self, snapshot: Self::Snapshot) {
-        self.block_state = snapshot;
+        (self.block_state, self.kind) = snapshot;
     }
 }
 
 #[test]
-fn execution_error_restores_refund_policy_snapshot() {
-    let mut db = prepare_observer_db();
+fn producer_refund_at_evm_gas_limit_is_preserved() {
+    assert_eq!(sanitize_producer_refund(42, 42, false), 42);
+}
+
+#[test]
+fn excessive_producer_refund_is_zeroed_and_verifies() {
+    let tx = observer_test_tx();
+    let mut producer_db = prepare_observer_db();
     let receipt_builder = OpAlloyReceiptBuilder::default();
     let hardforks = OpChainHardforks::op_mainnet();
-    let mut executor =
-        build_policy_executor::<ErroringRefundPolicy>(&mut db, &receipt_builder, &hardforks);
+    let mut producer =
+        build_policy_executor::<FaultyRefundPolicy>(&mut producer_db, &receipt_builder, &hardforks);
 
-    assert_eq!(executor.refund_snapshot(), 0);
-    executor
-        .execute_transaction(&observer_test_tx())
-        .expect_err("an impossible refund must fail execution");
-    assert_eq!(executor.refund_snapshot(), 0, "failed execution must restore policy state");
+    producer.execute_transaction(&tx).expect("faulty refund must not reject a valid transaction");
+    let evm_gas_used = producer.evm_gas_used;
+    assert!(evm_gas_used > 0);
+    assert_eq!(producer.gas_used, evm_gas_used, "the invalid refund must be zeroed");
+    assert!(
+        producer.post_exec_entries().is_empty(),
+        "an invalid refund must not produce a post-exec entry"
+    );
+    assert_eq!(
+        producer.refund_snapshot(),
+        (1, None),
+        "a zeroed refund still came from a committed transaction"
+    );
+    let (_, produced) = producer.finish().expect("producer finishes block");
+
+    let mut verifier_fixture =
+        JovianExecutorFixture::new(DEFAULT_DA_FOOTPRINT_GAS_SCALAR, 500_000, JOVIAN_TIMESTAMP);
+    verifier_fixture.db = prepare_observer_db();
+    let mut verifier = verifier_fixture.executor();
+    verifier.execute_transaction(&tx).expect("verifier accepts the unrefunded transaction");
+    let (_, verified) = verifier.finish().expect("verifier accepts produced block");
+
+    assert_eq!(verified.gas_used, produced.gas_used);
+    assert_eq!(verified.receipts, produced.receipts);
 }
+
+#[test]
+fn faulty_policy_refund_for_deposit_is_ignored() {
+    let deposit = recovered_deposit();
+    let mut producer_db = prepare_observer_db();
+    let receipt_builder = OpAlloyReceiptBuilder::default();
+    let hardforks = OpChainHardforks::op_mainnet();
+    let mut producer =
+        build_policy_executor::<FaultyRefundPolicy>(&mut producer_db, &receipt_builder, &hardforks);
+
+    producer.execute_transaction(&deposit).expect("faulty policy must not reject a deposit");
+    assert_eq!(producer.gas_used, producer.evm_gas_used);
+    assert!(producer.post_exec_entries().is_empty(), "deposits must not receive refund entries");
+    let (_, produced) = producer.finish().expect("producer finishes deposit block");
+
+    let mut verifier_fixture =
+        JovianExecutorFixture::new(DEFAULT_DA_FOOTPRINT_GAS_SCALAR, 500_000, JOVIAN_TIMESTAMP);
+    verifier_fixture.db = prepare_observer_db();
+    let mut verifier = verifier_fixture.executor();
+    verifier.execute_transaction(&deposit).expect("verifier executes deposit without a refund");
+    let (_, verified) = verifier.finish().expect("verifier accepts produced block");
+
+    assert_eq!(verified.gas_used, produced.gas_used);
+    assert_eq!(verified.receipts, produced.receipts);
+}
+
+#[cfg(feature = "metrics")]
+#[test]
+fn faulty_producer_refunds_increment_correction_metrics() {
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    metrics::with_local_recorder(&recorder, || {
+        assert_eq!(sanitize_producer_refund(u64::MAX, 42, false), 0);
+        assert_eq!(sanitize_producer_refund(1, 42, true), 0);
+    });
+
+    let mut corrections = snapshotter
+        .snapshot()
+        .into_vec()
+        .into_iter()
+        .filter(|(key, _, _, _)| key.key().name() == "optimism_sdm.policy_refund_corrections")
+        .map(|(key, _, _, value)| {
+            let reason = key
+                .key()
+                .labels()
+                .find(|label| label.key() == "reason")
+                .expect("correction metric has a reason label")
+                .value()
+                .to_string();
+            (reason, value)
+        })
+        .collect::<Vec<_>>();
+    corrections.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        corrections,
+        vec![
+            ("exceeds_evm_gas".to_string(), DebugValue::Counter(1)),
+            ("ineligible_transaction".to_string(), DebugValue::Counter(1)),
+        ]
+    );
+}
+
 #[test]
 fn test_settlement_state_account_preserves_original_info() {
     type TestExecutor<'a> = OpBlockExecutor<
@@ -709,7 +879,7 @@ fn test_mismatched_payload_block_number_fails_pre_execution() {
     // build_executor configures BlockEnv with block number 0; a payload anchored to a
     // different block must be rejected before any tx runs.
     let mut fixture = JovianExecutorFixture::default();
-    let mut executor = fixture.verifier(42, vec![]);
+    let mut executor = fixture.verifier(42, vec![SDMGasEntry { index: 0, gas_refund: 1 }]);
 
     let err =
         executor.apply_pre_execution_changes().expect_err("mismatched block number must fail");
@@ -730,6 +900,61 @@ fn test_duplicate_payload_index_fails_pre_execution() {
         .apply_pre_execution_changes()
         .expect_err("duplicate payload index must fail pre-execution");
     assert_invalid_post_exec(err, "duplicate post-exec payload entry for tx index 3");
+}
+
+#[test]
+fn test_empty_payload_entries_fail_pre_execution() {
+    let mut fixture = JovianExecutorFixture::default();
+    let mut executor = fixture.verifier(0, vec![]);
+
+    let err = executor
+        .apply_pre_execution_changes()
+        .expect_err("empty payload entries must fail pre-execution");
+    assert_invalid_post_exec(err, "empty post-exec payload gas refund entries");
+}
+
+#[test]
+fn test_zero_payload_refund_fails_pre_execution() {
+    let mut fixture = JovianExecutorFixture::default();
+    let mut executor = fixture.verifier(0, vec![SDMGasEntry { index: 3, gas_refund: 0 }]);
+
+    let err = executor
+        .apply_pre_execution_changes()
+        .expect_err("zero payload refund must fail pre-execution");
+    assert_invalid_post_exec(err, "zero post-exec payload refund for tx index 3");
+}
+
+#[test]
+fn test_out_of_order_payload_entries_fail_pre_execution() {
+    let mut fixture = JovianExecutorFixture::default();
+    let mut executor = fixture.verifier(
+        0,
+        vec![SDMGasEntry { index: 3, gas_refund: 10 }, SDMGasEntry { index: 2, gas_refund: 20 }],
+    );
+
+    let err = executor
+        .apply_pre_execution_changes()
+        .expect_err("out-of-order payload entries must fail pre-execution");
+    assert_invalid_post_exec(
+        err,
+        "post-exec payload entries not strictly increasing: tx index 2 follows 3",
+    );
+}
+
+#[test]
+fn test_sparse_ordered_payload_entries_are_consumed_linearly() {
+    let mut fixture = JovianExecutorFixture::default();
+    let mut executor = fixture.verifier(
+        0,
+        vec![SDMGasEntry { index: 2, gas_refund: 7 }, SDMGasEntry { index: 5, gas_refund: 11 }],
+    );
+
+    assert_eq!(executor.post_exec.invalid_reason(), None, "sparse ordered entries are valid");
+    assert_eq!(executor.post_exec.verifier_refund(1), None);
+    assert_eq!(executor.post_exec.verifier_refund(2), Some(7));
+    executor.post_exec.consume_verifier_entry(2);
+    assert_eq!(executor.post_exec.verifier_refund(4), None);
+    assert_eq!(executor.post_exec.verifier_refund(5), Some(11));
 }
 
 #[test]
@@ -888,30 +1113,39 @@ fn test_post_exec_tx_does_not_accrue_da_footprint() {
     assert_eq!(result.receipts.len(), 2, "the 0x7D still gets a receipt");
 }
 
-/// Regression coverage for a warm-set leak in op-revm's `catch_error`.
+/// Regression coverage for state leaked by a dropped transaction.
 ///
-/// `catch_error` must discard the journal on a non-deposit tx error, as upstream revm's
-/// `EthHandler::catch_error` does. Were it not to, then on the SDM Produce execution path
-/// (`alloy-op-evm` routes to `inspect_tx`, which skips `finalize()` on error) a failed candidate
-/// tx would leave its sender EIP-2929-warm in the shared journal, so a later tx executed on the
-/// same EVM would be mischarged — diverging from a validator that never executed the failed tx.
-/// These tests pin that the leak does not occur, and that the current production (SDM-disabled)
-/// configuration is unaffected either way.
+/// The first three tests cover a warm-set leak in op-revm's `catch_error`. `catch_error` must
+/// discard the journal on a non-deposit tx error, as upstream revm's `EthHandler::catch_error`
+/// does. Were it not to, then on the SDM Produce execution path (`alloy-op-evm` routes to
+/// `inspect_tx`, which skips `finalize()` on error) a failed candidate tx would leave its sender
+/// EIP-2929-warm in the shared journal, so a later tx executed on the same EVM would be mischarged
+/// — diverging from a validator that never executed the failed tx. Those tests pin that the leak
+/// does not occur, and that the current production (SDM-disabled) configuration is unaffected
+/// either way.
 ///
-/// The probed path is policy-independent: Produce mode routes through `inspect_tx` whatever the
-/// policy, and the assertion is on `B`'s EIP-2929 gas, not on any refund. [`FixedRefundPolicy`]
-/// serves only to make the block carry a `0x7D` payload, as a real SDM block does.
+/// The journal-warmth path is policy-independent: Produce mode routes through `inspect_tx` whatever
+/// the policy, and the assertion is on `B`'s EIP-2929 gas, not on any refund.
+/// [`FixedRefundPolicy`] serves only to make the block carry a `0x7D` payload, as a real SDM block
+/// does. op-revm's `catch_error_tests.rs` keeps the unit matrix for that invariant; the first two
+/// tests here are the end-to-end builder-vs-validator pin.
 ///
-/// op-revm's `catch_error_tests.rs` keeps the unit matrix for the same invariant; this mod is the
-/// end-to-end builder-vs-validator pin.
+/// The final two tests cover a separate leak in the producer policy's block-scoped state. They use
+/// a stateful policy, assert on its snapshot rather than probe transaction gas, and specifically
+/// pin this crate's candidate-rollback wrapper; op-revm's unit matrix does not cover that
+/// invariant.
 mod warm_set_leak {
     use super::*;
+    use alloc::collections::BTreeSet;
+    use revm::context::result::InvalidTransaction;
 
     /// Sender of the failing tx `A` — loaded+warmed during validation before the nonce check
     /// rejects it. Its leaked warmth is the bug.
     const LEAK_ADDR: Address = Address::new([0xAA; 20]);
     /// Sender of the probe tx `B`.
     const PROBE_SENDER: Address = Address::new([0xBB; 20]);
+    /// Unique policy-state marker used to distinguish snapshot restoration from clearing state.
+    const POLICY_SENTINEL: Address = Address::new([0xDD; 20]);
     /// Probe contract: `PUSH20 <LEAK_ADDR>; BALANCE; POP; STOP` — a Berlin account access on `A`'s
     /// sender, charged 100 (warm) or 2600 (cold).
     const PROBE_CONTRACT: Address = Address::new([0xCC; 20]);
@@ -1135,6 +1369,154 @@ mod warm_set_leak {
         assert_eq!(
             without, with_failed_a,
             "with SDM disabled (prod config) a skipped failing tx must not affect the next tx",
+        );
+    }
+
+    // Leak B: unlike the journal-warmth leak above, this rides the producer *policy's* block-scoped
+    // state. `FixedRefundPolicy` is stateless, so it cannot detect it; use a policy whose only
+    // mutation is in `note_account_touch` — the `transact_raw` error-path call
+    // (`note_post_exec_account_touch`) a dropped tx triggers.
+    #[derive(Debug, Clone, Default)]
+    struct FeeVaultTouchPolicy {
+        touched: BTreeSet<Address>,
+    }
+
+    impl PostExecRefundInspector for FeeVaultTouchPolicy {
+        type Snapshot = BTreeSet<Address>;
+
+        fn begin_tx(&mut self, _ctx: PostExecTxContext) {}
+
+        fn note_account_touch(&mut self, address: Address) {
+            self.touched.insert(address);
+        }
+
+        fn finish_tx(&mut self) -> PostExecExecutedTx {
+            PostExecExecutedTx::default()
+        }
+
+        fn inspect_step<CTX>(&mut self, _interp: &mut Interpreter, _context: &mut CTX)
+        where
+            CTX: ContextTr<Journal: JournalExt>,
+        {
+        }
+
+        fn inspect_call<CTX>(&mut self, _context: &mut CTX, _inputs: &mut CallInputs)
+        where
+            CTX: ContextTr<Journal: JournalExt>,
+        {
+        }
+
+        fn inspect_call_end<CTX>(
+            &mut self,
+            _context: &mut CTX,
+            _inputs: &CallInputs,
+            _outcome: &CallOutcome,
+        ) where
+            CTX: ContextTr<Journal: JournalExt>,
+        {
+        }
+
+        fn inspect_create<CTX>(&mut self, _context: &mut CTX, _inputs: &mut CreateInputs)
+        where
+            CTX: ContextTr<Journal: JournalExt>,
+        {
+        }
+
+        fn inspect_create_end<CTX>(
+            &mut self,
+            _context: &mut CTX,
+            _inputs: &CreateInputs,
+            _outcome: &CreateOutcome,
+        ) where
+            CTX: ContextTr<Journal: JournalExt>,
+        {
+        }
+
+        fn inspect_selfdestruct(&mut self, _contract: Address, _target: Address, _value: U256) {}
+
+        fn snapshot(&self) -> Self::Snapshot {
+            self.touched.clone()
+        }
+
+        fn restore(&mut self, snapshot: Self::Snapshot) {
+            self.touched = snapshot;
+        }
+    }
+
+    fn assert_invalid_transaction(err: BlockExecutionError, expected: InvalidTransaction) {
+        match err {
+            BlockExecutionError::Validation(BlockValidationError::InvalidTx { error, .. }) => {
+                assert_eq!(error.as_invalid_tx_err(), Some(&expected));
+            }
+            other => panic!("expected invalid transaction {expected:?}, got: {other:?}"),
+        }
+    }
+
+    /// A dropped state-invalid tx must restore a stateful producer policy to its per-candidate
+    /// snapshot. The sentinel proves the wrapper restores rather than clears prior block-scoped
+    /// state; the successful probe afterward proves this fixture exercises fee-vault touch
+    /// tracking. Removing the `Err`-branch restore leaves the failed tx's touches alongside the
+    /// sentinel and fails the exact-snapshot assertion.
+    fn assert_dropped_tx_leaves_no_policy_touch(
+        make_db: impl Fn() -> State<InMemoryDB>,
+        expected_error: InvalidTransaction,
+        a_error_context: &str,
+    ) {
+        let mut db = make_db();
+        let receipt_builder = OpAlloyReceiptBuilder::default();
+        let op_chain_hardforks = hardforks();
+        let mut executor = build_policy_executor_with::<FeeVaultTouchPolicy>(
+            &mut db,
+            &receipt_builder,
+            &op_chain_hardforks,
+            0,
+            Address::ZERO,
+            Inspect::Disabled,
+        );
+
+        let sentinel_snapshot = BTreeSet::from([POLICY_SENTINEL]);
+        executor.seed_refund_snapshot(sentinel_snapshot.clone());
+        assert_eq!(executor.refund_snapshot(), sentinel_snapshot);
+
+        let err = executor
+            .execute_transaction(&legacy_with_sender(LEAK_ADDR, 0, PROBE_SENDER, 50_000))
+            .expect_err(a_error_context);
+        assert_invalid_transaction(err, expected_error);
+        assert_eq!(
+            executor.refund_snapshot(),
+            sentinel_snapshot,
+            "a dropped failing tx did not restore the producer policy's per-candidate snapshot",
+        );
+
+        executor.execute_transaction(&probe_tx()).expect("probe tx B executes");
+        let expected_committed_snapshot = BTreeSet::from([
+            POLICY_SENTINEL,
+            L1_FEE_RECIPIENT,
+            BASE_FEE_RECIPIENT,
+            OPERATOR_FEE_RECIPIENT,
+        ]);
+        assert_eq!(
+            executor.refund_snapshot(),
+            expected_committed_snapshot,
+            "a committed tx must exercise and retain the fee-vault touch pathway",
+        );
+    }
+
+    #[test]
+    fn dropped_nonce_too_low_tx_leaves_no_fee_vault_touch_in_policy() {
+        assert_dropped_tx_leaves_no_policy_touch(
+            nonce_too_low_db,
+            InvalidTransaction::NonceTooLow { tx: 0, state: 5 },
+            "tx A must fail NonceTooLow and be skipped",
+        );
+    }
+
+    #[test]
+    fn dropped_eip3607_tx_leaves_no_fee_vault_touch_in_policy() {
+        assert_dropped_tx_leaves_no_policy_touch(
+            contract_sender_db,
+            InvalidTransaction::RejectCallerWithCode,
+            "tx A must fail EIP-3607 (contract sender) and be skipped",
         );
     }
 }
