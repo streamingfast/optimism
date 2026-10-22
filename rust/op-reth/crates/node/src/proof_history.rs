@@ -42,7 +42,10 @@ pub async fn launch_node(
     if !args.proofs_history {
         let handle = builder
             .node(OpNode::new(args))
-            .on_component_initialized(|node| reth_optimism_firehose::init_blockchain(&node.provider))
+            // Must stay the only `on_component_initialized` hook: a later one replaces it.
+            .on_component_initialized(|node| {
+                reth_optimism_firehose::init_blockchain(&node.provider)
+            })
             .launch_with_debug_capabilities()
             .await?;
         return handle.node_exit_future.await;
@@ -90,6 +93,7 @@ where
 
     let handle = builder
         .node(OpNode::new(args))
+        // Must stay the only `on_component_initialized` hook: a later one replaces it.
         .on_component_initialized(|node| reth_optimism_firehose::init_blockchain(&node.provider))
         .on_node_started(move |node| {
             spawn_proofs_db_metrics(

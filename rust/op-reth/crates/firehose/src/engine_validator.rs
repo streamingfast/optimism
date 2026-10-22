@@ -132,11 +132,9 @@ use reth_engine_primitives::{
 // constructors (`StateRootJobContext::new`, `PayloadStateRootJobContext::new`) and
 // `PayloadProcessor::execution_cache()` are `pub(crate)` in `reth_engine_tree` — inaccessible from
 // this external crate. Only `BasicEngineValidator` itself (same-crate) can drive that machinery.
-// We fall back to computing the state root synchronously/in-parallel via the still-public
-// `StateRootProvider`/`ParallelStateRoot` primitives below (see `compute_state_root_parallel` /
-// `compute_state_root_serial` / `plan_state_root_computation`), same as this clone did before the
-// v2.4.2 rebase. This only affects the state-root algorithm choice, not Firehose tracing: no
-// tracer event is emitted or altered by which state-root strategy runs.
+// The state root is computed synchronously through the still-public `StateRootProvider` (see
+// `compute_state_root_serial`). This only affects the state-root algorithm choice, not Firehose
+// tracing: no tracer event is emitted or altered by which state-root strategy runs.
 use reth_engine_tree::tree::{
     CacheWaitDurations, CachedStateProvider, EngineApiMetrics, EngineApiTreeState, ExecutionEnv,
     PayloadHandle, PayloadProcessor, StateProviderBuilder, TreeConfig, ValidationOutput,
@@ -607,7 +605,7 @@ where
 
         // No execution-state-hook streaming source: the new `state_root_strategy` framework's
         // context constructors (`StateRootJobContext::new`) are `pub(crate)` in `reth_engine_tree`
-        // and inaccessible here (see the module-doc note above `PayloadStateRootHandle`'s import).
+        // and inaccessible here (see the note above the `reth_engine_tree::tree` import).
         // `hint_stream` / `hashed_update_stream` / `execution_state_hook` are therefore always
         // `None`: the state root is computed after execution via `compute_state_root_serial`
         // below instead of the newer streaming sparse-trie job. `ParallelStateRoot` (the previous
@@ -901,7 +899,8 @@ where
             guard.mark_verified();
         }
 
-        let executed_block = self.spawn_deferred_trie_task(block, output, hashed_state, trie_output);
+        let executed_block =
+            self.spawn_deferred_trie_task(block, output, hashed_state, trie_output);
         Ok((executed_block, timing_stats))
     }
 
@@ -1860,6 +1859,12 @@ where
     ) -> eyre::Result<Self::EngineValidator> {
         use reth_chainspec::EthChainSpec;
         use reth_node_builder::invalid_block_hook::InvalidBlockHookExt;
+        if tree_config.txpool_prewarming() {
+            warn!(
+                target: "engine::tree::payload_validator",
+                "--engine.txpool-prewarming is not supported by the Firehose engine validator and is ignored"
+            );
+        }
         let validator = self.payload_validator_builder.build(ctx).await?;
         let data_dir = ctx.config.datadir.clone().resolve_datadir(ctx.config.chain.chain());
         let invalid_block_hook = ctx.create_invalid_block_hook(&data_dir).await?;
