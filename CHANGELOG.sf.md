@@ -9,7 +9,28 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
-## op-reth-v2.5.0-fh3.1
+## op-reth-v2.6.1-fh3.1
+
+Bumps the SF op-reth fork to upstream `op-reth/v2.6.1` (68 upstream commits on top of
+`op-reth/v2.5.0`).
+
+### Changed
+
+* Merged upstream `op-reth/v2.6.1`, which moves reth to v2.5.2 (ethereum-optimism/reth
+  `0fbe4285`), revm to 42 and alloy-evm to 0.38. None of the op-revm, alloy-op-evm or op-reth
+  changes in the range alter the fee vault credits, deposit handling or fork schedule the Firehose
+  hooks depend on.
+* Reth now comes from `streamingfast/reth` tag `op-reth-v2.6.1-fh3.1`, which merges `0fbe4285`
+  into `release/optimism-2.x`.
+* `alloy-evm` now comes from `streamingfast/evm` tag `v0.38.0-sf`, so block traces keep their
+  `systemCalls`.
+* Firehose code changes report the previous code hash and code from revm 42's `CodeChange` journal
+  entry instead of assuming empty code. A contract creation starts from empty code, so its code
+  change is reported as before.
+* `FIRE INIT` and the genesis block are emitted from the node builder's `on_component_initialized`
+  hook, before the consensus engine exists. The genesis block used to be emitted from
+  `on_node_started`, which can run after the engine has traced a block.
+
 
 Bumps the SF op-reth fork to upstream `op-reth/v2.5.0` (67 upstream commits on top of
 `op-reth/v2.4.4`).

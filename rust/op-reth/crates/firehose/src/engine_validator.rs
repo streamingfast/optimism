@@ -122,7 +122,7 @@ use alloy_primitives::{
 
 use alloy_consensus::constants::KECCAK_EMPTY;
 use alloy_primitives::Address;
-use reth_chain_state::{ExecutedBlock, ExecutionTimingStats, StateTrieOverlayManager};
+use reth_chain_state::{ExecutedBlock, ExecutionTimingStats};
 use reth_consensus::{ConsensusError, FullConsensus, ReceiptRootBloom};
 use reth_engine_primitives::{
     ConfigureEngineEvm, ExecutableTxIterator, InvalidBlockHook, PayloadValidator,
@@ -132,11 +132,9 @@ use reth_engine_primitives::{
 // constructors (`StateRootJobContext::new`, `PayloadStateRootJobContext::new`) and
 // `PayloadProcessor::execution_cache()` are `pub(crate)` in `reth_engine_tree` — inaccessible from
 // this external crate. Only `BasicEngineValidator` itself (same-crate) can drive that machinery.
-// We fall back to computing the state root synchronously/in-parallel via the still-public
-// `StateRootProvider`/`ParallelStateRoot` primitives below (see `compute_state_root_parallel` /
-// `compute_state_root_serial` / `plan_state_root_computation`), same as this clone did before the
-// v2.4.2 rebase. This only affects the state-root algorithm choice, not Firehose tracing: no
-// tracer event is emitted or altered by which state-root strategy runs.
+// The state root is computed synchronously through the still-public `StateRootProvider` (see
+// `compute_state_root_serial`). This only affects the state-root algorithm choice, not Firehose
+// tracing: no tracer event is emitted or altered by which state-root strategy runs.
 use reth_engine_tree::tree::{
     CacheWaitDurations, CachedStateProvider, EngineApiMetrics, EngineApiTreeState, ExecutionEnv,
     PayloadHandle, PayloadProcessor, StateProviderBuilder, TreeConfig, ValidationOutput,
@@ -146,14 +144,15 @@ use reth_engine_tree::tree::{
     payload_processor::receipt_root_task::{IndexedReceipt, ReceiptRootTaskHandle},
     payload_validator::{BlockOrPayload, EngineValidator, TreeCtx, ValidationOutcome},
     precompile_cache::{CachedPrecompile, CachedPrecompileMetrics, PrecompileCacheMap},
-    state_root_strategy::{PayloadStateRootHandle, StateRootHintStream, StateRootUpdateStream},
+    state_root_strategy::{StateRootHintStream, StateRootUpdateStream},
 };
 use reth_errors::{BlockExecutionError, ProviderResult};
 use reth_evm::{
     ConfigureEvm, EvmEnvFor, ExecutionCtxFor, OnStateHook, SpecFor, block::BlockExecutor,
     execute::ExecutableTxFor,
 };
-use reth_execution_cache::{CacheFillMode, CacheStats, SavedCache};
+use reth_execution_cache::{CacheFillMode, CacheStats};
+use reth_payload_builder::{PayloadBuilderLease, PayloadBuilderResources};
 use reth_payload_primitives::{
     BuiltPayload, BuiltPayloadExecutedBlock, InvalidPayloadAttributesError, NewPayloadError,
     PayloadTypes,
@@ -163,20 +162,20 @@ use reth_primitives_traits::{
     RecoveredBlock, SealedBlock, SealedHeader, SignerRecoverable,
 };
 use reth_provider::{
-    BlockExecutionOutput, BlockNumReader, BlockReader, ChangeSetReader, DatabaseProviderFactory,
-    DatabaseProviderROFactory, HashedPostStateProvider, ProviderError, PruneCheckpointReader,
-    StageCheckpointReader, StateProvider, StateProviderBox, StateProviderFactory, StateReader,
-    StorageChangeSetReader, StorageSettingsCache, providers::OverlayStateProviderFactory,
+    BlockExecutionOutput, BlockReader, ChangeSetReader, DatabaseProviderFactory,
+    DatabaseProviderROFactory, ProviderError, PruneCheckpointReader, StageCheckpointReader,
+    StateProvider, StateProviderBox, StateProviderFactory, StateReader, StorageChangeSetReader,
+    StorageSettingsCache, TryIntoHistoricalStateProvider,
 };
 use reth_revm::{
     database::StateProviderDatabase,
     db::{BundleAccount, State, states::bundle_state::BundleRetention},
 };
+use reth_storage_overlay::{OverlayManager, OverlayStateProviderFactory};
 use reth_trie::{
-    HashedPostState, LazyTrieData, hashed_cursor::HashedCursorFactory,
-    prefix_set::TriePrefixSetsMut, trie_cursor::TrieCursorFactory, updates::TrieUpdates,
+    HashedPostState, KeccakKeyHasher, LazyTrieData, hashed_cursor::HashedCursorFactory,
+    trie_cursor::TrieCursorFactory, updates::TrieUpdates,
 };
-use reth_trie_db::ChangesetCache;
 use std::{
     sync::{
         Arc,
@@ -264,17 +263,10 @@ where
     metrics: EngineApiMetrics,
     /// Validator for the payload.
     validator: V,
-    /// Changeset cache for in-memory trie changesets.
-    ///
-    /// Carried so this clone keeps the same construction signature as upstream's validator, but
-    /// unread since v2.4.2 made `ChangesetCache::register_pending` private — the deferred trie
-    /// task no longer registers a pending entry from here.
-    #[expect(dead_code, reason = "kept for parity with upstream's validator construction")]
-    changeset_cache: ChangesetCache,
     /// Task runtime for spawning parallel work.
     runtime: reth_tasks::Runtime,
-    /// Shared state trie in-memory overlay data.
-    state_trie_overlays: StateTrieOverlayManager<Evm::Primitives>,
+    /// Shared overlay manager.
+    overlay_manager: OverlayManager<Evm::Primitives>,
 }
 
 impl<N, P, Evm, V> OpFirehoseEngineValidator<P, Evm, V>
@@ -286,20 +278,17 @@ where
                           + PruneCheckpointReader
                           + ChangeSetReader
                           + StorageChangeSetReader
-                          + BlockNumReader
-                          + StorageSettingsCache,
+                          + StorageSettingsCache
+                          + TryIntoHistoricalStateProvider
+                          + 'static,
         > + BlockReader<Header = N::BlockHeader>
         + ChangeSetReader
-        + BlockNumReader
         + StateProviderFactory
         + StateReader
-        + HashedPostStateProvider
         + Clone
         + 'static,
     OverlayStateProviderFactory<P, N>: DatabaseProviderROFactory<Provider: TrieCursorFactory + HashedCursorFactory>
         + Clone
-        + Send
-        + Sync
         + 'static,
     Evm: ConfigureEvm<Primitives = N> + 'static,
 {
@@ -312,8 +301,7 @@ where
         validator: V,
         config: TreeConfig,
         invalid_block_hook: Box<dyn InvalidBlockHook<N>>,
-        changeset_cache: ChangesetCache,
-        state_trie_overlays: StateTrieOverlayManager<N>,
+        overlay_manager: OverlayManager<N>,
         runtime: reth_tasks::Runtime,
     ) -> Self {
         let precompile_cache_map = PrecompileCacheMap::default();
@@ -334,9 +322,8 @@ where
             invalid_block_hook,
             metrics: EngineApiMetrics::default(),
             validator,
-            changeset_cache,
             runtime,
-            state_trie_overlays,
+            overlay_manager,
         }
     }
 
@@ -601,6 +588,9 @@ where
             gas_used: input.gas_used(),
             withdrawals: input.withdrawals().map(|w| w.to_vec()),
             decoded_bal: decoded_bal.as_ref().map(Arc::clone),
+            // Txpool prewarming is not wired into this clone (its worker handle is private to
+            // `reth_engine_tree`); it is off by default (`--engine.txpool-prewarming`).
+            txpool_snapshot: None,
         };
 
         // Get an iterator over the transactions in the payload
@@ -615,7 +605,7 @@ where
 
         // No execution-state-hook streaming source: the new `state_root_strategy` framework's
         // context constructors (`StateRootJobContext::new`) are `pub(crate)` in `reth_engine_tree`
-        // and inaccessible here (see the module-doc note above `PayloadStateRootHandle`'s import).
+        // and inaccessible here (see the note above the `reth_engine_tree::tree` import).
         // `hint_stream` / `hashed_update_stream` / `execution_state_hook` are therefore always
         // `None`: the state root is computed after execution via `compute_state_root_serial`
         // below instead of the newer streaming sparse-trie job. `ParallelStateRoot` (the previous
@@ -763,7 +753,6 @@ where
         // block conversion and receipt root computation. This is a pure CPU-bound task
         // (keccak256 hashing of all changed addresses and storage slots).
         let hashed_state_output = output.clone();
-        let hashed_state_provider = self.provider.clone();
         let hashed_state: LazyHashedPostState =
             self.runtime.spawn_blocking_named("hash-post-state", move || {
                 let _span = debug_span!(
@@ -771,7 +760,9 @@ where
                     "hashed_post_state",
                 )
                 .entered();
-                hashed_state_provider.hashed_post_state(&hashed_state_output.state)
+                HashedPostState::from_bundle_state::<KeccakKeyHasher>(
+                    hashed_state_output.state.state(),
+                )
             });
 
         let block = convert_to_block(input)?;
@@ -833,6 +824,7 @@ where
             self.validator.validate_block_post_execution_with_hashed_state(
                 || hashed_state.get(),
                 &block,
+                &parent_block,
                 || provider_builder.build(),
             )
         });
@@ -859,9 +851,6 @@ where
             (root, Arc::new(updates))
         };
         let root_elapsed = root_start.elapsed();
-        // This clone does not compute the trie's changed base paths (only the sparse-trie job
-        // does); pass `None` — `LazyTrieData::pending` treats it as "unknown, compute lazily".
-        let changed_paths = None;
 
         self.metrics.block_validation.record_state_root(&trie_output, root_elapsed.as_secs_f64());
         self.metrics
@@ -911,7 +900,7 @@ where
         }
 
         let executed_block =
-            self.spawn_deferred_trie_task(block, output, hashed_state, trie_output, changed_paths);
+            self.spawn_deferred_trie_task(block, output, hashed_state, trie_output);
         Ok((executed_block, timing_stats))
     }
 
@@ -1403,33 +1392,22 @@ where
 
     /// Creates a `StateProviderBuilder` for the given parent hash.
     ///
-    /// This method checks if the parent is in the tree state (in-memory) or persisted to disk,
-    /// and creates the appropriate provider builder.
+    /// Returns `None` when the parent is neither in memory nor persisted.
     fn state_provider_builder(
         &self,
         hash: B256,
         state: &EngineApiTreeState<N>,
     ) -> ProviderResult<Option<StateProviderBuilder<N, P>>> {
-        if let Some((historical, blocks)) = state.tree_state().blocks_by_hash(hash) {
-            debug!(target: "engine::tree::payload_validator", %hash, %historical, "found canonical state for block in memory, creating provider builder");
-            // the block leads back to the canonical chain
-            return Ok(Some(StateProviderBuilder::new(
-                self.provider.clone(),
-                historical,
-                Some(blocks),
-            )));
+        if !state.tree_state().contains_hash(&hash) && self.provider.header(hash)?.is_none() {
+            debug!(target: "engine::tree::payload_validator", %hash, "no canonical state found for block");
+            return Ok(None);
         }
 
-        // Check if the block is persisted
-        if let Some(header) = self.provider.header(hash)? {
-            debug!(target: "engine::tree::payload_validator", %hash, number = %header.number(), "found canonical state for block in database, creating provider builder");
-            // For persisted blocks, we create a builder that will fetch state directly from the
-            // database
-            return Ok(Some(StateProviderBuilder::new(self.provider.clone(), hash, None)));
-        }
-
-        debug!(target: "engine::tree::payload_validator", %hash, "no canonical state found for block");
-        Ok(None)
+        Ok(Some(StateProviderBuilder::new(
+            self.provider.clone(),
+            hash,
+            state.tree_state().state_trie_overlays().clone(),
+        )))
     }
 
     /// Called when an invalid block is encountered during validation.
@@ -1478,7 +1456,6 @@ where
         execution_outcome: Arc<BlockExecutionOutput<N::Receipt>>,
         hashed_state: LazyHashedPostState,
         trie_output: Arc<TrieUpdates>,
-        changed_paths: Option<Arc<TriePrefixSetsMut>>,
     ) -> ExecutedBlock<N> {
         // Create deferred handle and task that owns the unsorted inputs.
         // Resolve the lazy handle into Arc<HashedPostState>. By this point the hashed state has
@@ -1488,7 +1465,7 @@ where
             Err(handle) => Arc::new(handle.get().clone()),
         };
         let (deferred_trie_data, deferred_trie_task) =
-            LazyTrieData::pending(hashed_state, trie_output, changed_paths);
+            LazyTrieData::pending(hashed_state, trie_output);
         let block_validation_metrics = self.metrics.block_validation.clone();
 
         // Capture block info for tracing.
@@ -1632,6 +1609,18 @@ where
             .unwrap_or_default();
         let (code_cache_hits, code_cache_misses) =
             cache_stats.as_ref().map(|s| (s.code_hits(), s.code_misses())).unwrap_or_default();
+        let (txpool_snapshot_account_hits, txpool_snapshot_account_misses) = cache_stats
+            .as_ref()
+            .map(|s| (s.txpool_snapshot_account_hits(), s.txpool_snapshot_account_misses()))
+            .unwrap_or_default();
+        let (txpool_snapshot_storage_hits, txpool_snapshot_storage_misses) = cache_stats
+            .as_ref()
+            .map(|s| (s.txpool_snapshot_storage_hits(), s.txpool_snapshot_storage_misses()))
+            .unwrap_or_default();
+        let (txpool_snapshot_code_hits, txpool_snapshot_code_misses) = cache_stats
+            .as_ref()
+            .map(|s| (s.txpool_snapshot_code_hits(), s.txpool_snapshot_code_misses()))
+            .unwrap_or_default();
 
         // Build execution timing stats for detailed block logging
         Box::new(ExecutionTimingStats {
@@ -1660,6 +1649,12 @@ where
             storage_cache_misses,
             code_cache_hits,
             code_cache_misses,
+            txpool_snapshot_account_hits,
+            txpool_snapshot_account_misses,
+            txpool_snapshot_storage_hits,
+            txpool_snapshot_storage_misses,
+            txpool_snapshot_code_hits,
+            txpool_snapshot_code_misses,
         })
     }
 }
@@ -1672,20 +1667,17 @@ where
                           + PruneCheckpointReader
                           + ChangeSetReader
                           + StorageChangeSetReader
-                          + BlockNumReader
-                          + StorageSettingsCache,
+                          + StorageSettingsCache
+                          + TryIntoHistoricalStateProvider
+                          + 'static,
         > + BlockReader<Header = N::BlockHeader>
         + StateProviderFactory
         + StateReader
         + ChangeSetReader
-        + BlockNumReader
-        + HashedPostStateProvider
         + Clone
         + 'static,
     OverlayStateProviderFactory<P, N>: DatabaseProviderROFactory<Provider: TrieCursorFactory + HashedCursorFactory>
         + Clone
-        + Send
-        + Sync
         + 'static,
     N: NodePrimitives,
     V: PayloadValidator<Types, Block = N::Block> + Clone,
@@ -1750,29 +1742,26 @@ where
             block.execution_output,
             reth_tasks::LazyHandle::ready((*block.hashed_state).clone()),
             block.trie_updates,
-            block.changed_paths,
         ))
     }
 
-    fn cache_for(&self, block_hash: B256) -> Option<SavedCache> {
-        Some(self.payload_processor.cache_for(block_hash))
-    }
-
-    fn payload_state_root_handle_for(
+    fn payload_builder_resources(
         &self,
-        _parent_hash: B256,
+        parent_hash: B256,
         _parent_header: &N::BlockHeader,
         _timestamp: u64,
         _state: &mut EngineApiTreeState<N>,
-    ) -> Option<PayloadStateRootHandle> {
-        // Always decline: per this method's own contract ("Returns `None` when the strategy
-        // declines, in which case the payload builder computes the state root itself"), `None`
-        // is a fully supported, correct answer — not a stub. We cannot construct a
-        // `PayloadStateRootJobContext` to hand to a custom `StateRootStrategy` here (its `::new`
-        // is `pub(crate)` in `reth_engine_tree`; see the module-doc note above this file's
-        // `state_root_strategy` import), so the payload builder always falls back to computing
-        // its own state root synchronously. This has no effect on Firehose tracing.
-        None
+    ) -> PayloadBuilderResources {
+        let execution_cache = self
+            .config
+            .share_execution_cache_with_payload_builder()
+            .then(|| self.payload_processor.cache_for(parent_hash));
+        // No state-root handle: the payload builder then computes the state root itself. We
+        // cannot construct a `PayloadStateRootJobContext` to hand to a `StateRootStrategy` here
+        // (its `::new` is `pub(crate)` in `reth_engine_tree`; see the module-doc note above this
+        // file's `state_root_strategy` import). This has no effect on Firehose tracing.
+        PayloadBuilderResources::new(execution_cache, None)
+            .with_lease(PayloadBuilderLease::new(JitPauseGuard::new(&self.evm_config)))
     }
 }
 
@@ -1792,11 +1781,11 @@ where
         // validation, Firehose tracing, or consensus behavior — only that extension's reported
         // timing when `wait_for_caches` is explicitly requested.
         let execution_cache = Duration::ZERO;
-        let state_trie_overlays = self.state_trie_overlays.clone();
+        let overlay_manager = self.overlay_manager.clone();
         let (sparse_trie_tx, sparse_trie_rx) = std::sync::mpsc::channel();
 
         self.runtime.spawn_blocking_named("wait-sparse-tri", move || {
-            let _ = sparse_trie_tx.send(state_trie_overlays.wait_for_sparse_trie_availability());
+            let _ = sparse_trie_tx.send(overlay_manager.wait_for_sparse_trie_availability());
         });
 
         let sparse_trie =
@@ -1866,13 +1855,16 @@ where
         self,
         ctx: &reth_node_api::AddOnsContext<'_, Node>,
         tree_config: TreeConfig,
-        changeset_cache: ChangesetCache,
-        state_trie_overlays: StateTrieOverlayManager<
-            <Node::Types as reth_node_api::NodeTypes>::Primitives,
-        >,
+        overlay_manager: OverlayManager<<Node::Types as reth_node_api::NodeTypes>::Primitives>,
     ) -> eyre::Result<Self::EngineValidator> {
         use reth_chainspec::EthChainSpec;
         use reth_node_builder::invalid_block_hook::InvalidBlockHookExt;
+        if tree_config.txpool_prewarming() {
+            warn!(
+                target: "engine::tree::payload_validator",
+                "--engine.txpool-prewarming is not supported by the Firehose engine validator and is ignored"
+            );
+        }
         let validator = self.payload_validator_builder.build(ctx).await?;
         let data_dir = ctx.config.datadir.clone().resolve_datadir(ctx.config.chain.chain());
         let invalid_block_hook = ctx.create_invalid_block_hook(&data_dir).await?;
@@ -1884,8 +1876,7 @@ where
             validator,
             tree_config,
             invalid_block_hook,
-            changeset_cache,
-            state_trie_overlays,
+            overlay_manager,
             ctx.node.task_executor().clone(),
         ))
     }
