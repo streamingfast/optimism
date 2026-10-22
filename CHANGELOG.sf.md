@@ -20,7 +20,7 @@ Bumps the SF op-reth fork to upstream `op-reth/v2.6.1` (68 upstream commits on t
   `0fbe4285`), revm to 42 and alloy-evm to 0.38. None of the op-revm, alloy-op-evm or op-reth
   changes in the range alter the fee vault credits, deposit handling or fork schedule the Firehose
   hooks depend on.
-* Reth now comes from `streamingfast/reth` branch `bump/op-reth-v2.6.1`, which merges `0fbe4285`
+* Reth now comes from `streamingfast/reth` tag `op-reth-v2.6.1-fh3.1`, which merges `0fbe4285`
   into `release/optimism-2.x`.
 * `alloy-evm` now comes from `streamingfast/evm` tag `v0.38.0-sf`, so block traces keep their
   `systemCalls`.

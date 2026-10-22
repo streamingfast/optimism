@@ -33,8 +33,8 @@ streamingfast/reth branch `bump/op-reth-v2.6.1` (PR into `release/optimism-2.x`)
 - Cherry-picks reth-2.x `4b7797bcf7` (Emit Firehose init and genesis without an ExEx), which
   deletes `runner.rs` (`run_exex`) and the `reth-exex` dependency, and adds `init.rs`.
 
-This repo points every reth crate at `branch = "bump/op-reth-v2.6.1"` until that PR merges and is
-tagged; switch to the tag before merging this PR.
+The PR merged as `d4875c13` and is tagged `op-reth-v2.6.1-fh3.1`, with no file changes from the
+branch head `e2428f7e`. This repo points every reth crate at `tag = "op-reth-v2.6.1-fh3.1"`.
 
 ## Upstream changes that touch op-reth
 
@@ -126,6 +126,4 @@ This repo:
 
 ## Before merging
 
-- Merge streamingfast/reth#81, tag `op-reth-v2.6.1-fh3.1` there, and switch every reth crate in
-  `rust/Cargo.toml` from `branch = "bump/op-reth-v2.6.1"` to that tag.
 - Tag this repo `op-reth-v2.6.1-fh3.1` after merge.
