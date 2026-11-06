@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/opcm"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/pipeline"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/state"
-	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/upgrade/embedded"
 	opeth "github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
@@ -231,6 +230,7 @@ func verifyContinuationDeployment(
 	}
 	verifier.verifySystemConfig()
 	verifier.verifySuperchainConfig()
+	verifier.verifyDelays()
 	// Only verify using the validator on permissionless mode.
 	// The validator expects the permissionless game to exist,
 	// so it would always fail on a permissioned chain.
@@ -255,21 +255,21 @@ func (v *continuationVerifier) resolveGameMode() (continuationGameMode, error) {
 	mode := continuationGameMode{
 		respectedGameType: gameType,
 	}
-	switch embedded.GameType(gameType) {
-	case embedded.GameTypePermissionedCannon:
+	switch opcm.GameType(gameType) {
+	case opcm.GameTypePermissionedCannon:
 		mode.respectedImplementation = v.expected.PermissionedDisputeGameImpl
 		mode.hasChallenger = true
-	case embedded.GameTypeSuperPermissioned:
+	case opcm.GameTypeSuperPermissioned:
 		mode.respectedImplementation = v.expected.PermissionedDisputeGameImpl
-	case embedded.GameTypeCannonKona:
-		fallback := uint32(embedded.GameTypePermissionedCannon)
+	case opcm.GameTypeCannonKona:
+		fallback := uint32(opcm.GameTypePermissionedCannon)
 		mode.respectedImplementation = v.expected.FaultDisputeGameImpl
 		mode.fallbackGameType = &fallback
 		mode.fallbackImplementation = v.expected.PermissionedDisputeGameImpl
 		mode.permissionless = true
 		mode.hasChallenger = true
-	case embedded.GameTypeSuperCannonKona:
-		fallback := uint32(embedded.GameTypeSuperPermissioned)
+	case opcm.GameTypeSuperCannonKona:
+		fallback := uint32(opcm.GameTypeSuperPermissioned)
 		mode.respectedImplementation = v.expected.FaultDisputeGameImpl
 		mode.fallbackGameType = &fallback
 		mode.fallbackImplementation = v.expected.PermissionedDisputeGameImpl
@@ -757,6 +757,32 @@ func (v *continuationVerifier) verifySuperchainConfig() {
 	})
 }
 
+func (v *continuationVerifier) verifyDelays() {
+	delays := []struct {
+		check    string
+		source   string
+		contract common.Address
+		method   *w3.Func
+		expected *big.Int
+	}{
+		{"OptimismPortal proof maturity delay", "frozen DeployOPChainInput.ProofMaturityDelaySeconds", v.expected.OptimismPortalProxy, continuationProofMaturityDelayMethod, v.dci.ProofMaturityDelaySeconds},
+		{"AnchorStateRegistry dispute game finality delay", "frozen DeployOPChainInput.DisputeGameFinalityDelaySeconds", v.expected.AnchorStateRegistryProxy, continuationFinalityDelayMethod, v.dci.DisputeGameFinalityDelaySeconds},
+		{"DelayedWETH permissioned withdrawal delay", "frozen DeployOPChainInput.WithdrawalDelaySeconds", v.expected.DelayedWethPermissionedGameProxy, continuationWithdrawalDelayMethod, v.dci.WithdrawalDelaySeconds},
+		{"DelayedWETH permissionless withdrawal delay", "frozen DeployOPChainInput.WithdrawalDelaySeconds", v.expected.DelayedWethPermissionlessGameProxy, continuationWithdrawalDelayMethod, v.dci.WithdrawalDelaySeconds},
+	}
+	for _, delay := range delays {
+		if delay.contract == (common.Address{}) {
+			continue
+		}
+		observed, err := readContinuation[*big.Int](v.ctx, v.backend, delay.contract, delay.method)
+		if err != nil {
+			v.addReadError(delay.check, delay.source, delay.expected, err)
+		} else if delay.expected == nil || observed.Cmp(delay.expected) != 0 {
+			v.addMismatch(delay.check, delay.source, delay.expected, observed)
+		}
+	}
+}
+
 func (v *continuationVerifier) verifyStandardValidator() {
 	validator, err := readContinuation[common.Address](
 		v.ctx,
@@ -838,13 +864,15 @@ func standardValidatorInput(
 	dci opcm.DeployOPChainInput,
 	contracts addresses.OpChainContracts,
 ) opcm.StandardValidatorInput {
-	gameType := embedded.GameType(dci.DisputeGameType)
-	useDevInput := gameType == embedded.GameTypeCannonKona || gameType == embedded.GameTypeSuperCannonKona
+	gameType := opcm.GameType(dci.DisputeGameType)
+	useDevInput := gameType == opcm.GameTypeCannonKona || gameType == opcm.GameTypeSuperCannonKona
+	// ZKPrestate stays zero: deploy() never registers ZK_DISPUTE_GAME, so a fresh chain has none.
 	return opcm.StandardValidatorInput{
 		SystemConfig:        contracts.SystemConfigProxy,
 		AbsolutePrestate:    dci.DisputeAbsolutePrestate,
 		CannonPrestate:      dci.CannonAbsolutePrestate,
 		CannonKonaPrestate:  dci.DisputeAbsolutePrestate,
+		ZKPrestate:          common.Hash{},
 		L2ChainID:           dci.L2ChainId,
 		Proposer:            dci.Proposer,
 		L1PAOMultisig:       dci.OpChainProxyAdminOwner,
@@ -917,6 +945,9 @@ var (
 	continuationGuardianMethod            = w3.MustNewFunc("guardian()", "address")
 	continuationStandardValidatorMethod   = w3.MustNewFunc("opcmStandardValidator()", "address")
 	continuationStartingAnchorRootMethod  = w3.MustNewFunc("getStartingAnchorRoot()", "(bytes32 root,uint256 l2SequenceNumber)")
+	continuationProofMaturityDelayMethod  = w3.MustNewFunc("proofMaturityDelaySeconds()", "uint256")
+	continuationFinalityDelayMethod       = w3.MustNewFunc("disputeGameFinalityDelaySeconds()", "uint256")
+	continuationWithdrawalDelayMethod     = w3.MustNewFunc("delay()", "uint256")
 )
 
 func readContinuation[T any](

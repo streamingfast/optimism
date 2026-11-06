@@ -9,6 +9,27 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## op-reth-v2.8.1-fh3.1
+
+Bumps the SF op-reth fork to upstream `op-reth/v2.8.1` (307 upstream commits on top of
+`op-reth/v2.6.1`).
+
+### Changed
+
+* Merged upstream `op-reth/v2.8.1`, which moves reth to ethereum-optimism/reth `op-v2.6.0-2`
+  (reth v2.6.0), revm to 43 and alloy-evm to 0.39. The fee vault formulas, deposit handling and
+  fork schedule the Firehose hooks depend on are unchanged. Upstream fixes `eth_capabilities` so it
+  no longer advertises history below the Bedrock block.
+* Reth now comes from `streamingfast/reth` tag `op-reth-v2.8.1-fh3.1`, which merges `op-v2.6.0-2`
+  into `release/optimism-2.x`.
+* `alloy-evm` now comes from `streamingfast/evm` tag `v0.39.0-sf`, so block traces keep their
+  `systemCalls`.
+* The Firehose engine validator follows upstream's payload validator: a block whose transaction
+  sender cannot be recovered is now rejected as an invalid block instead of failing with an
+  internal error.
+* Add `ACTIVATIONS.md`, which lists every OP hardfork with its status on OP Mainnet and Unichain
+  and its effect on the Firehose block.
+
 ## op-reth-v2.6.1-fh3.1
 
 Bumps the SF op-reth fork to upstream `op-reth/v2.6.1` (68 upstream commits on top of

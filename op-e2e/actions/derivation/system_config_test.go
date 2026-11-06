@@ -69,13 +69,13 @@ func BatcherKeyRotation(gt *testing.T, deltaTimeOffset *hexutil.Uint64) {
 
 	// the default batcher
 	batcherA := actionsHelpers.NewL2Batcher(log, sd.RollupCfg, actionsHelpers.DefaultBatcherCfg(dp),
-		rollupSeqCl, miner.EthClient(), seqEngine.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
+		rollupSeqCl, miner.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
 
 	// a batcher with a new key
 	altCfg := *actionsHelpers.DefaultBatcherCfg(dp)
 	altCfg.BatcherKey = dp.Secrets.Bob
 	batcherB := actionsHelpers.NewL2Batcher(log, sd.RollupCfg, &altCfg,
-		rollupSeqCl, miner.EthClient(), seqEngine.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
+		rollupSeqCl, miner.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
 
 	sequencer.ActL2PipelineFull(t)
 	verifier.ActL2PipelineFull(t)
@@ -249,7 +249,7 @@ func GPODefaultParams(gt *testing.T, deltaTimeOffset *hexutil.Uint64) {
 	alice := actionsHelpers.NewBasicUser[any](log, dp.Secrets.Alice, rand.New(rand.NewSource(1234)))
 	alice.SetUserEnv(&actionsHelpers.BasicUserEnv[any]{
 		EthCl:  seqEngine.EthClient(),
-		Signer: types.LatestSigner(sd.L2Cfg.Config),
+		Signer: types.LatestSignerForChainID(sd.L2Cfg.Config.ChainID),
 	})
 
 	sequencer.ActL2PipelineFull(t)
@@ -299,12 +299,12 @@ func TestGPOParamsChangeEcotone(gt *testing.T) {
 	sd := e2eutils.Setup(t, dp, actionsHelpers.DefaultAlloc)
 	miner, seqEngine, sequencer := actionsHelpers.SetupSequencerTest(t, sd, log)
 	batcher := actionsHelpers.NewL2Batcher(log, sd.RollupCfg, actionsHelpers.DefaultBatcherCfg(dp),
-		sequencer.RollupClient(), miner.EthClient(), seqEngine.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
+		sequencer.RollupClient(), miner.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
 
 	alice := actionsHelpers.NewBasicUser[any](log, dp.Secrets.Alice, rand.New(rand.NewSource(1234)))
 	alice.SetUserEnv(&actionsHelpers.BasicUserEnv[any]{
 		EthCl:  seqEngine.EthClient(),
-		Signer: types.LatestSigner(sd.L2Cfg.Config),
+		Signer: types.LatestSignerForChainID(sd.L2Cfg.Config.ChainID),
 	})
 
 	sequencer.ActL2PipelineFull(t)
@@ -431,14 +431,14 @@ func GasLimitChange(gt *testing.T, deltaTimeOffset *hexutil.Uint64) {
 	log := testlog.Logger(t, log.LevelDebug)
 	miner, seqEngine, sequencer := actionsHelpers.SetupSequencerTest(t, sd, log)
 	batcher := actionsHelpers.NewL2Batcher(log, sd.RollupCfg, actionsHelpers.DefaultBatcherCfg(dp),
-		sequencer.RollupClient(), miner.EthClient(), seqEngine.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
+		sequencer.RollupClient(), miner.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
 
 	sequencer.ActL2PipelineFull(t)
 	miner.ActEmptyBlock(t)
 	sequencer.ActL1HeadSignal(t)
 	sequencer.ActBuildToL1Head(t)
 
-	oldGasLimit := seqEngine.L2Chain().CurrentBlock().GasLimit
+	oldGasLimit := seqEngine.LatestHeader(t).GasLimit
 	require.Equal(t, oldGasLimit, uint64(dp.DeployConfig.L2GenesisBlockGasLimit))
 
 	// change gas limit on L1 to triple what it was
@@ -460,12 +460,12 @@ func GasLimitChange(gt *testing.T, deltaTimeOffset *hexutil.Uint64) {
 	sequencer.ActL1HeadSignal(t)
 	sequencer.ActBuildToL1HeadExcl(t)
 
-	require.Equal(t, oldGasLimit, seqEngine.L2Chain().CurrentBlock().GasLimit)
+	require.Equal(t, oldGasLimit, seqEngine.LatestHeader(t).GasLimit)
 	require.Equal(t, uint64(1), sequencer.SyncStatus().UnsafeL2.L1Origin.Number)
 
 	// now include the L1 block with the gaslimit change, and see if it changes as expected
 	sequencer.ActBuildToL1Head(t)
-	require.Equal(t, oldGasLimit*3, seqEngine.L2Chain().CurrentBlock().GasLimit)
+	require.Equal(t, oldGasLimit*3, seqEngine.LatestHeader(t).GasLimit)
 	require.Equal(t, uint64(2), sequencer.SyncStatus().UnsafeL2.L1Origin.Number)
 
 	// now submit all this to L1, and see if a verifier can sync and reproduce it

@@ -42,6 +42,8 @@ func TestNewDeployImplementationsScript(t *testing.T) {
 
 		// We'll need some contracts already deployed for this to work
 		proxyAdminAddress, proxyAddress := deployDependencies(host1)
+		sp1Verifier, err := DeployMockSP1Verifier(host1, addresses.ScriptDeployer)
+		require.NoError(t, err)
 
 		deployImplementations, err := NewDeployImplementationsScript(host1)
 		require.NoError(t, err)
@@ -49,22 +51,25 @@ func TestNewDeployImplementationsScript(t *testing.T) {
 		// Now we run the deploy script
 		mipsVersion := int64(standard.MIPSVersion)
 		output, err := deployImplementations.Run(DeployImplementationsInput{
-			WithdrawalDelaySeconds:          big.NewInt(1),
-			MinProposalSizeBytes:            big.NewInt(2),
-			ChallengePeriodSeconds:          big.NewInt(3),
-			ProofMaturityDelaySeconds:       big.NewInt(4),
-			DisputeGameFinalityDelaySeconds: big.NewInt(5),
-			MipsVersion:                     big.NewInt(mipsVersion),
-			DevFeatureBitmap:                common.Hash{},
-			FaultGameV2MaxGameDepth:         big.NewInt(73),
-			FaultGameV2SplitDepth:           big.NewInt(30),
-			FaultGameV2ClockExtension:       big.NewInt(10800),
-			FaultGameV2MaxClockDuration:     big.NewInt(302400),
-			SuperchainConfigProxy:           proxyAddress,
-			SuperchainProxyAdmin:            proxyAdminAddress,
-			L1ProxyAdminOwner:               common.BigToAddress(big.NewInt(13)),
-			Challenger:                      common.BigToAddress(big.NewInt(14)),
-			SP1Verifier:                     common.Address{},
+			MinWithdrawalDelaySeconds:          big.NewInt(1),
+			MaxWithdrawalDelaySeconds:          big.NewInt(2),
+			MinProposalSizeBytes:               big.NewInt(2),
+			ChallengePeriodSeconds:             big.NewInt(3),
+			MinProofMaturityDelaySeconds:       big.NewInt(4),
+			MaxProofMaturityDelaySeconds:       big.NewInt(8),
+			MinDisputeGameFinalityDelaySeconds: big.NewInt(5),
+			MaxDisputeGameFinalityDelaySeconds: big.NewInt(10),
+			MipsVersion:                        big.NewInt(mipsVersion),
+			DevFeatureBitmap:                   common.Hash{},
+			FaultGameV2MaxGameDepth:            big.NewInt(73),
+			FaultGameV2SplitDepth:              big.NewInt(30),
+			FaultGameV2ClockExtension:          big.NewInt(10800),
+			FaultGameV2MaxClockDuration:        big.NewInt(302400),
+			SuperchainConfigProxy:              proxyAddress,
+			SuperchainProxyAdmin:               proxyAdminAddress,
+			L1ProxyAdminOwner:                  common.BigToAddress(big.NewInt(13)),
+			Challenger:                         common.BigToAddress(big.NewInt(14)),
+			SP1Verifier:                        sp1Verifier,
 		})
 
 		// And do some simple asserts
