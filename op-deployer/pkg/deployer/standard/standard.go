@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-core/forks"
 	opparams "github.com/ethereum-optimism/optimism/op-core/params"
 	"github.com/ethereum-optimism/optimism/op-core/superchain"
+	"github.com/ethereum-optimism/optimism/op-core/superchain/bundle"
 
 	"github.com/ethereum-optimism/superchain-registry/validation"
 
@@ -29,7 +30,15 @@ const (
 	ChallengePeriodSeconds          uint64 = 86400
 	ProofMaturityDelaySeconds       uint64 = 604800
 	DisputeGameFinalityDelaySeconds uint64 = 302400
-	MIPSVersion                     uint64 = 8
+	// Bounds baked into the OptimismPortal, AnchorStateRegistry and DelayedWETH implementations
+	// for the per-chain withdrawal delays above.
+	MinProofMaturityDelaySeconds       uint64 = 86400
+	MaxProofMaturityDelaySeconds       uint64 = 604800
+	MinDisputeGameFinalityDelaySeconds uint64 = 43200
+	MaxDisputeGameFinalityDelaySeconds uint64 = 302400
+	MinWithdrawalDelaySeconds          uint64 = 43200
+	MaxWithdrawalDelaySeconds          uint64 = 604800
+	MIPSVersion                        uint64 = 8
 	// DisputeGameType is the SUPER_PERMISSIONED game type. DeployOPChain requires the initial game
 	// type to match the OPCM's family, and SUPER_ROOT_GAMES_MIGRATION is enabled by default, so the
 	// permissioned selector for a standard deploy is the super root one.
@@ -43,12 +52,6 @@ const (
 	Eip1559Denominator       uint64 = 50
 	Eip1559Elasticity        uint64 = 6
 
-	// DefaultGenesisTimeOffsetSeconds is the default offset added to the L1 anchor block's
-	// timestamp to produce the committed L2 genesis timestamp.
-	DefaultGenesisTimeOffsetSeconds uint64 = 10800 // 3 hours
-	// MinGenesisTimeOffsetSeconds is the smallest offset prepare accepts.
-	MinGenesisTimeOffsetSeconds uint64 = 3600 // 1 hour
-
 	ContractsV160Tag        = "op-contracts/v1.6.0"
 	ContractsV180Tag        = "op-contracts/v1.8.0-rc.4"
 	ContractsV170Beta1L2Tag = "op-contracts/v1.7.0-beta.1+l2-contracts"
@@ -60,7 +63,8 @@ const (
 	ContractsV600Tag        = "op-contracts/v6.0.0-rc.2"
 	ContractsV700Tag        = "op-contracts/v7.0.0-rc.4"
 	ContractsV800Tag        = "op-contracts/v8.0.0"
-	CurrentTag              = ContractsV800Tag
+	ContractsV900Tag        = "op-contracts/v9.0.0"
+	CurrentTag              = ContractsV900Tag
 )
 
 var DisputeAbsolutePrestate = common.HexToHash("0x038512e02c4c3f7bdaec27d00edf55b7155e0905301e1a88083e4e0a6764d54c")
@@ -119,7 +123,7 @@ const (
 // sp1VerifierHashJSON maps each L1 chain ID to the VERIFIER_HASH() of the verifier from
 // SP1VerifierFor, i.e. the PLONK circuit it accepts proofs for. Proofs carry the first four bytes
 // of that value as their selector, so the linked sp1-sdk must prove for the same circuit;
-// kona-sp1-proposer's release-pin test reads the same file and holds the SDK to it.
+// op-zk-proposer's release-pin test reads the same file and holds the SDK to it.
 // Source: succinctlabs/sp1-contracts@2ac5ecbbe473421a963d67e55f182e9a36576f7c,
 // contracts/src/v6.1.0/SP1VerifierPlonk.sol, VERIFIER_HASH().
 // DO NOT MODIFY THIS FILE WITHOUT CLEARING IT WITH THE EVM SAFETY TEAM.
@@ -136,9 +140,8 @@ var sp1VerifierHashes = func() map[string]common.Hash {
 }()
 
 // SP1VerifierFor returns the raw SP1 verifier approved for the current OPCM release on the given L1
-// chain ID. Both `bootstrap implementations` and `apply` default to it when ZK dispute games are
-// enabled and the operator did not pin a verifier explicitly. Change it together with
-// SP1VerifierHashFor and the sp1-sdk pin in rust/Cargo.toml.
+// chain ID. Both `bootstrap implementations` and live `apply` default to it when the operator did
+// not pin a verifier. Change it together with SP1VerifierHashFor and the sp1-sdk pin in rust/Cargo.toml.
 // DO NOT MODIFY THIS METHOD WITHOUT CLEARING IT WITH THE EVM SAFETY TEAM.
 func SP1VerifierFor(chainID uint64) (common.Address, error) {
 	switch chainID {
@@ -166,9 +169,9 @@ func SP1VerifierHashFor(chainID uint64) (common.Hash, error) {
 func SuperchainFor(chainID uint64) (superchain.Superchain, error) {
 	switch chainID {
 	case 1:
-		return superchain.GetSuperchain("mainnet")
+		return bundle.GetSuperchain("mainnet")
 	case 11155111:
-		return superchain.GetSuperchain("sepolia")
+		return bundle.GetSuperchain("sepolia")
 	default:
 		return superchain.Superchain{}, fmt.Errorf("unsupported chain ID: %d", chainID)
 	}
@@ -241,7 +244,7 @@ func DefaultHardforkSchedule() *genesis.UpgradeScheduleDeployConfig {
 }
 
 var defaultHardfork = sync.OnceValue(func() forks.Name {
-	chain, err := superchain.GetChain(opparams.OPMainnetChainID)
+	chain, err := bundle.GetChain(opparams.OPMainnetChainID)
 	if err != nil {
 		panic(fmt.Errorf("get op mainnet chain: %w", err))
 	}

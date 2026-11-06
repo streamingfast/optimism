@@ -2,14 +2,22 @@
 pragma solidity 0.8.15;
 
 // Testing
-import { DisputeGameFactory_TestInit } from "test/dispute/DisputeGameFactory.t.sol";
+import { DisputeGameFactory_TestInit } from "test/setup/DisputeGameFactoryTestInit.sol";
 
 // Libraries
 import { DevFeatures } from "src/libraries/DevFeatures.sol";
 import { Types } from "src/libraries/Types.sol";
 import { Encoding } from "src/libraries/Encoding.sol";
 import { Hashing } from "src/libraries/Hashing.sol";
-import { BondDistributionMode, Claim, Duration, GameStatus, GameType, GameTypes, Hash } from "src/dispute/lib/Types.sol";
+import {
+    BondDistributionMode,
+    Claim,
+    Duration,
+    GameStatus,
+    GameType,
+    GameTypes,
+    Hash
+} from "src/dispute/lib/Types.sol";
 
 // Contracts
 import { ZKDisputeGame } from "src/dispute/zk/ZKDisputeGame.sol";
@@ -23,7 +31,7 @@ import { IOPContractsManagerUtils } from "interfaces/L1/opcm/IOPContractsManager
 /// @title ZKDisputeGameSuperMigration_Test
 /// @notice Integration test exercising Path A (SFDG -> ZKDG) and Path B (SPDG -> ZKDG): migrating an
 ///         isolated chain's respected super game to the ZK dispute game via the real
-///         `OPCMv2.upgrade()` flow (the same flow the `op-deployer manage` commands invoke). Asserts
+///         `OPCMv2.upgrade()` flow (the flow that the ProxyAdmin owner delegatecalls). Asserts
 ///         (1) the upgrade succeeds (ZK registered, source super game cleared, respected type flipped
 ///         to ZK), (2) a ZK game can be created, proven, resolved, and finalized in place of the
 ///         super game (closeGame -> valid claim -> anchor advances), (3) a super game created
@@ -52,7 +60,6 @@ contract ZKDisputeGameSuperMigration_Test is DisputeGameFactory_TestInit {
 
     function setUp() public override {
         super.setUp();
-        skipIfDevFeatureDisabled(DevFeatures.ZK_DISPUTE_GAME);
         skipIfDevFeatureDisabled(DevFeatures.SUPER_ROOT_GAMES_MIGRATION);
 
         vm.deal(flipProposer, 100 ether);
@@ -284,41 +291,40 @@ contract ZKDisputeGameSuperMigration_Test is DisputeGameFactory_TestInit {
         _pushDisabled(GameTypes.SUPER_PERMISSIONED);
         _pushDisabled(GameTypes.SUPER_CANNON_KONA);
 
-        _zkUpgradeInput.disputeGameConfigs.push(
-            IOPContractsManagerUtils.DisputeGameConfig({
-                enabled: true,
-                initBond: flipBond,
-                gameType: GameTypes.ZK_DISPUTE_GAME,
-                gameArgs: abi.encode(
-                    IOPContractsManagerUtils.ZKDisputeGameConfig({
-                        absolutePrestate: zkAbsolutePrestate,
-                        maxChallengeDuration: zkMaxChallengeDuration,
-                        maxProveDuration: zkMaxProveDuration,
-                        challengerBond: flipBond
-                    })
-                )
-            })
-        );
+        _zkUpgradeInput.disputeGameConfigs
+            .push(
+                IOPContractsManagerUtils.DisputeGameConfig({
+                    enabled: true,
+                    initBond: flipBond,
+                    gameType: GameTypes.ZK_DISPUTE_GAME,
+                    gameArgs: abi.encode(
+                        IOPContractsManagerUtils.ZKDisputeGameConfig({
+                            absolutePrestate: zkAbsolutePrestate,
+                            maxChallengeDuration: zkMaxChallengeDuration,
+                            maxProveDuration: zkMaxProveDuration,
+                            challengerBond: flipBond
+                        })
+                    )
+                })
+            );
 
         // Flip the respected game type to ZK (the previously-respected super game is now disabled).
-        _zkUpgradeInput.extraInstructions.push(
-            IOPContractsManagerUtils.ExtraInstruction({
-                key: "overrides.cfg.startingRespectedGameType",
-                data: abi.encode(GameTypes.ZK_DISPUTE_GAME)
-            })
-        );
+        _zkUpgradeInput.extraInstructions
+            .push(
+                IOPContractsManagerUtils.ExtraInstruction({
+                    key: "overrides.cfg.startingRespectedGameType", data: abi.encode(GameTypes.ZK_DISPUTE_GAME)
+                })
+            );
     }
 
     /// @notice Pushes a disabled dispute game config for the given type.
     function _pushDisabled(GameType _gameType) internal {
-        _zkUpgradeInput.disputeGameConfigs.push(
-            IOPContractsManagerUtils.DisputeGameConfig({
-                enabled: false,
-                initBond: 0,
-                gameType: _gameType,
-                gameArgs: hex""
-            })
-        );
+        _zkUpgradeInput.disputeGameConfigs
+            .push(
+                IOPContractsManagerUtils.DisputeGameConfig({
+                    enabled: false, initBond: 0, gameType: _gameType, gameArgs: hex""
+                })
+            );
     }
 
     /// @notice Runs the OPCM upgrade as the chain ProxyAdmin owner

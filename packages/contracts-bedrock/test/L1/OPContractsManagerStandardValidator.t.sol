@@ -13,7 +13,6 @@ import { GameType, Hash } from "src/dispute/lib/LibUDT.sol";
 import { GameTypes, Duration, Claim } from "src/dispute/lib/Types.sol";
 import { ForgeArtifacts } from "scripts/libraries/ForgeArtifacts.sol";
 import { Features } from "src/libraries/Features.sol";
-import { DevFeatures } from "src/libraries/DevFeatures.sol";
 import { Config } from "scripts/libraries/Config.sol";
 
 // Interfaces
@@ -165,11 +164,6 @@ abstract contract OPContractsManagerStandardValidator_TestInit is CommonTest {
         if (Config.devFeatureSuperRootGamesMigration()) {
             vm.skip(true, "Skipping: standard configs incompatible with SUPER_ROOT_GAMES_MIGRATION");
         }
-        // Standard validator tests do not deploy a ZK dispute game, so they are incompatible
-        // with ZK_DISPUTE_GAME mode which expects one to be registered.
-        if (Config.devFeatureZkDisputeGame()) {
-            vm.skip(true, "Skipping: standard configs incompatible with ZK_DISPUTE_GAME");
-        }
         super.setUp();
 
         // Load the dgf
@@ -258,10 +252,7 @@ abstract contract OPContractsManagerStandardValidator_TestInit is CommonTest {
             IOPContractsManagerUtils.DisputeGameConfig[] memory disputeGameConfigs =
                 new IOPContractsManagerUtils.DisputeGameConfig[](6);
             disputeGameConfigs[0] = IOPContractsManagerUtils.DisputeGameConfig({
-                enabled: false,
-                initBond: 0,
-                gameType: GameTypes.CANNON,
-                gameArgs: hex""
+                enabled: false, initBond: 0, gameType: GameTypes.CANNON, gameArgs: hex""
             });
             disputeGameConfigs[1] = IOPContractsManagerUtils.DisputeGameConfig({
                 enabled: true,
@@ -269,9 +260,7 @@ abstract contract OPContractsManagerStandardValidator_TestInit is CommonTest {
                 gameType: GameTypes.PERMISSIONED_CANNON,
                 gameArgs: abi.encode(
                     IOPContractsManagerUtils.PermissionedDisputeGameConfig({
-                        absolutePrestate: cannonPrestate,
-                        proposer: proposer,
-                        challenger: challenger
+                        absolutePrestate: cannonPrestate, proposer: proposer, challenger: challenger
                     })
                 )
             });
@@ -284,44 +273,33 @@ abstract contract OPContractsManagerStandardValidator_TestInit is CommonTest {
                 )
             });
             disputeGameConfigs[3] = IOPContractsManagerUtils.DisputeGameConfig({
-                enabled: false,
-                initBond: 0,
-                gameType: GameTypes.SUPER_PERMISSIONED,
-                gameArgs: hex""
+                enabled: false, initBond: 0, gameType: GameTypes.SUPER_PERMISSIONED, gameArgs: hex""
             });
             disputeGameConfigs[4] = IOPContractsManagerUtils.DisputeGameConfig({
-                enabled: false,
-                initBond: 0,
-                gameType: GameTypes.SUPER_CANNON_KONA,
-                gameArgs: hex""
+                enabled: false, initBond: 0, gameType: GameTypes.SUPER_CANNON_KONA, gameArgs: hex""
             });
             disputeGameConfigs[5] = IOPContractsManagerUtils.DisputeGameConfig({
-                enabled: false,
-                initBond: 0,
-                gameType: GameTypes.ZK_DISPUTE_GAME,
-                gameArgs: hex""
+                enabled: false, initBond: 0, gameType: GameTypes.ZK_DISPUTE_GAME, gameArgs: hex""
             });
             IOPContractsManagerUtils.ExtraInstruction[] memory extraInstructions =
                 new IOPContractsManagerUtils.ExtraInstruction[](1);
             extraInstructions[0] = IOPContractsManagerUtils.ExtraInstruction({
-                key: "overrides.cfg.startingRespectedGameType",
-                data: abi.encode(GameTypes.CANNON_KONA)
+                key: "overrides.cfg.startingRespectedGameType", data: abi.encode(GameTypes.CANNON_KONA)
             });
 
             // Call upgrade to all games to be enabled.
             prankDelegateCall(owner);
-            (bool success,) = address(opcmV2).delegatecall(
-                abi.encodeCall(
-                    IOPContractsManagerV2.upgrade,
-                    (
-                        IOPContractsManagerV2.UpgradeInput({
-                            systemConfig: systemConfig,
-                            disputeGameConfigs: disputeGameConfigs,
-                            extraInstructions: extraInstructions
-                        })
+            (bool success,) = address(opcmV2)
+                .delegatecall(
+                    abi.encodeCall(
+                        IOPContractsManagerV2.upgrade,
+                        (IOPContractsManagerV2.UpgradeInput({
+                                systemConfig: systemConfig,
+                                disputeGameConfigs: disputeGameConfigs,
+                                extraInstructions: extraInstructions
+                            }))
                     )
-                )
-            );
+                );
             assertTrue(success, "upgrade failed");
 
             // Grab the FaultDisputeGame implementation.
@@ -338,6 +316,7 @@ abstract contract OPContractsManagerStandardValidator_TestInit is CommonTest {
                 sysCfg: systemConfig,
                 cannonPrestate: cannonPrestate.raw(),
                 cannonKonaPrestate: cannonKonaPrestate.raw(),
+                zkPrestate: bytes32(0),
                 l2ChainID: l2ChainId,
                 proposer: proposer
             }),
@@ -361,6 +340,7 @@ abstract contract OPContractsManagerStandardValidator_TestInit is CommonTest {
                 sysCfg: systemConfig,
                 cannonPrestate: cannonPrestate.raw(),
                 cannonKonaPrestate: cannonKonaPrestate.raw(),
+                zkPrestate: bytes32(0),
                 l2ChainID: l2ChainId,
                 proposer: proposer
             }),
@@ -375,8 +355,7 @@ abstract contract OPContractsManagerStandardValidator_TestInit is CommonTest {
         returns (IOPContractsManagerStandardValidator.ValidationOverrides memory)
     {
         return IOPContractsManagerStandardValidator.ValidationOverrides({
-            l1PAOMultisig: address(0),
-            challenger: address(0)
+            l1PAOMultisig: address(0), challenger: address(0)
         });
     }
 }
@@ -418,8 +397,10 @@ contract OPContractsManagerStandardValidator_GeneralOverride_Test is OPContracts
     ///         successfully returns no error when there is none. That is, it never returns the
     ///         overridden strings alone.
     function test_validateOverrides_noErrors_succeeds() public {
-        IOPContractsManagerStandardValidator.ValidationOverrides memory overrides = IOPContractsManagerStandardValidator
-            .ValidationOverrides({ l1PAOMultisig: address(0xbad), challenger: address(0xc0ffee) });
+        IOPContractsManagerStandardValidator.ValidationOverrides memory overrides =
+            IOPContractsManagerStandardValidator.ValidationOverrides({
+                l1PAOMultisig: address(0xbad), challenger: address(0xc0ffee)
+            });
         vm.mockCall(
             address(delayedWeth),
             abi.encodeCall(IProxyAdminOwnedBase.proxyAdminOwner, ()),
@@ -439,8 +420,10 @@ contract OPContractsManagerStandardValidator_GeneralOverride_Test is OPContracts
     /// @notice Tests that the validate function (with overrides) and allow failure set to false,
     ///         returns the errors with the overrides prepended.
     function test_validateOverrides_notAllowFailurePrependsOverrides_succeeds() public {
-        IOPContractsManagerStandardValidator.ValidationOverrides memory overrides = IOPContractsManagerStandardValidator
-            .ValidationOverrides({ l1PAOMultisig: address(0xbad), challenger: address(0xc0ffee) });
+        IOPContractsManagerStandardValidator.ValidationOverrides memory overrides =
+            IOPContractsManagerStandardValidator.ValidationOverrides({
+                l1PAOMultisig: address(0xbad), challenger: address(0xc0ffee)
+            });
 
         vm.expectRevert(
             bytes(
@@ -869,6 +852,15 @@ contract OPContractsManagerStandardValidator_OptimismPortal_Test is OPContractsM
         );
         assertEq("PORTAL-90", _validate(true));
     }
+
+    /// @notice Tests that the validate function successfully returns the right error when the
+    ///         OptimismPortal proof maturity delay is outside the standard range.
+    function test_validate_optimismPortalDelayOutOfRange_succeeds() public {
+        vm.mockCall(
+            address(optimismPortal2), abi.encodeCall(IOptimismPortal2.proofMaturityDelaySeconds, ()), abi.encode(1)
+        );
+        assertEq("PORTAL-100", _validate(true));
+    }
 }
 
 /// @title OPContractsManagerStandardValidator_ETHLockbox_Test
@@ -1159,9 +1151,7 @@ contract OPContractsManagerStandardValidator_PermissionedDisputeGame_Test is
             abi.encodeCall(IProxyAdminOwnedBase.proxyAdminOwner, ()),
             abi.encode(standardValidator.l1PAOMultisig())
         );
-        vm.mockCall(
-            badWeth, abi.encodeCall(IDelayedWETH.delay, ()), abi.encode(standardValidator.withdrawalDelaySeconds())
-        );
+        vm.mockCall(badWeth, abi.encodeCall(IDelayedWETH.delay, ()), abi.encode(delayedWeth.delay()));
         vm.mockCall(badWeth, abi.encodeCall(IDelayedWETH.ethLockbox, ()), abi.encode(expectedETHLockboxFor(sysCfg)));
         vm.mockCall(badWeth, abi.encodeCall(IProxyAdminOwnedBase.proxyAdmin, ()), abi.encode(proxyAdmin));
 
@@ -1276,9 +1266,7 @@ contract OPContractsManagerStandardValidator_PermissionedDisputeGame_Test is
 
 /// @title OPContractsManagerStandardValidator_AnchorStateRegistry_Test
 /// @notice Tests validation of `AnchorStateRegistry` configuration
-contract OPContractsManagerStandardValidator_AnchorStateRegistry_Test is
-    OPContractsManagerStandardValidator_TestInit
-{
+contract OPContractsManagerStandardValidator_AnchorStateRegistry_Test is OPContractsManagerStandardValidator_TestInit {
     /// @notice Tests that the validate function successfully returns the right error when the
     ///         AnchorStateRegistry version is invalid.
     function test_validate_anchorStateRegistryInvalidVersion_succeeds() public {
@@ -1306,6 +1294,17 @@ contract OPContractsManagerStandardValidator_AnchorStateRegistry_Test is
             abi.encodeCall(IAnchorStateRegistry.disputeGameFactory, ())
         );
         assertEq("PDDG-ANCHORP-30,CKDG-ANCHORP-30", _validate(true));
+    }
+
+    /// @notice Tests that the validate function successfully returns the right error when the
+    ///         AnchorStateRegistry finality delay is outside the standard range.
+    function test_validate_anchorStateRegistryDelayOutOfRange_succeeds() public {
+        vm.mockCall(
+            address(anchorStateRegistry),
+            abi.encodeCall(IAnchorStateRegistry.disputeGameFinalityDelaySeconds, ()),
+            abi.encode(1)
+        );
+        assertEq("PDDG-ANCHORP-80,CKDG-ANCHORP-80", _validate(true));
     }
 
     /// @notice Tests that the validate function successfully returns the right error when the
@@ -1399,7 +1398,7 @@ contract OPContractsManagerStandardValidator_DelayedWETH_Test is OPContractsMana
     }
 
     /// @notice Tests that the validate function successfully returns the right error when the
-    ///         DelayedWETH delay is invalid.
+    ///         DelayedWETH delay is outside the standard range.
     function test_validate_delayedWETHInvalidDelay_succeeds() public {
         vm.mockCall(address(delayedWeth), abi.encodeCall(IDelayedWETH.delay, ()), abi.encode(1000));
         assertEq("PDDG-DWETH-40,CKDG-DWETH-40", _validate(true));
@@ -1560,9 +1559,7 @@ contract OPContractsManagerStandardValidator_FaultDisputeGame_Test is OPContract
             abi.encodeCall(IProxyAdminOwnedBase.proxyAdminOwner, ()),
             abi.encode(standardValidator.l1PAOMultisig())
         );
-        vm.mockCall(
-            badWeth, abi.encodeCall(IDelayedWETH.delay, ()), abi.encode(standardValidator.withdrawalDelaySeconds())
-        );
+        vm.mockCall(badWeth, abi.encodeCall(IDelayedWETH.delay, ()), abi.encode(delayedWeth.delay()));
         vm.mockCall(badWeth, abi.encodeCall(IDelayedWETH.ethLockbox, ()), abi.encode(expectedETHLockboxFor(sysCfg)));
         vm.mockCall(badWeth, abi.encodeCall(IProxyAdminOwnedBase.proxyAdmin, ()), abi.encode(proxyAdmin));
     }
@@ -1796,22 +1793,13 @@ abstract contract OPContractsManagerStandardValidator_SuperMode_TestInit is Supe
 
         // Legacy types (all disabled).
         disputeGameConfigs[0] = IOPContractsManagerUtils.DisputeGameConfig({
-            enabled: false,
-            initBond: 0,
-            gameType: GameTypes.CANNON,
-            gameArgs: hex""
+            enabled: false, initBond: 0, gameType: GameTypes.CANNON, gameArgs: hex""
         });
         disputeGameConfigs[1] = IOPContractsManagerUtils.DisputeGameConfig({
-            enabled: false,
-            initBond: 0,
-            gameType: GameTypes.PERMISSIONED_CANNON,
-            gameArgs: hex""
+            enabled: false, initBond: 0, gameType: GameTypes.PERMISSIONED_CANNON, gameArgs: hex""
         });
         disputeGameConfigs[2] = IOPContractsManagerUtils.DisputeGameConfig({
-            enabled: false,
-            initBond: 0,
-            gameType: GameTypes.CANNON_KONA,
-            gameArgs: hex""
+            enabled: false, initBond: 0, gameType: GameTypes.CANNON_KONA, gameArgs: hex""
         });
 
         // Super types (enabled).
@@ -1825,35 +1813,32 @@ abstract contract OPContractsManagerStandardValidator_SuperMode_TestInit is Supe
             enabled: true,
             initBond: DEFAULT_DISPUTE_GAME_INIT_BOND,
             gameType: GameTypes.SUPER_CANNON_KONA,
-            gameArgs: abi.encode(IOPContractsManagerUtils.FaultDisputeGameConfig({ absolutePrestate: cannonKonaPrestate }))
+            gameArgs: abi.encode(
+                IOPContractsManagerUtils.FaultDisputeGameConfig({ absolutePrestate: cannonKonaPrestate })
+            )
         });
         disputeGameConfigs[5] = IOPContractsManagerUtils.DisputeGameConfig({
-            enabled: false,
-            initBond: 0,
-            gameType: GameTypes.ZK_DISPUTE_GAME,
-            gameArgs: hex""
+            enabled: false, initBond: 0, gameType: GameTypes.ZK_DISPUTE_GAME, gameArgs: hex""
         });
 
         IOPContractsManagerUtils.ExtraInstruction[] memory extraInstructions =
             new IOPContractsManagerUtils.ExtraInstruction[](1);
         extraInstructions[0] = IOPContractsManagerUtils.ExtraInstruction({
-            key: "overrides.cfg.startingRespectedGameType",
-            data: abi.encode(GameTypes.SUPER_PERMISSIONED)
+            key: "overrides.cfg.startingRespectedGameType", data: abi.encode(GameTypes.SUPER_PERMISSIONED)
         });
 
         prankDelegateCall(owner);
-        (bool success,) = address(opcmV2).delegatecall(
-            abi.encodeCall(
-                IOPContractsManagerV2.upgrade,
-                (
-                    IOPContractsManagerV2.UpgradeInput({
-                        systemConfig: systemConfig,
-                        disputeGameConfigs: disputeGameConfigs,
-                        extraInstructions: extraInstructions
-                    })
+        (bool success,) = address(opcmV2)
+            .delegatecall(
+                abi.encodeCall(
+                    IOPContractsManagerV2.upgrade,
+                    (IOPContractsManagerV2.UpgradeInput({
+                            systemConfig: systemConfig,
+                            disputeGameConfigs: disputeGameConfigs,
+                            extraInstructions: extraInstructions
+                        }))
                 )
-            )
-        );
+            );
         assertTrue(success, "super mode upgrade failed");
     }
 
@@ -1878,6 +1863,7 @@ abstract contract OPContractsManagerStandardValidator_SuperMode_TestInit is Supe
                 sysCfg: systemConfig,
                 cannonPrestate: cannonPrestate.raw(),
                 cannonKonaPrestate: cannonKonaPrestate.raw(),
+                zkPrestate: bytes32(0),
                 l2ChainID: l2ChainId,
                 proposer: proposer
             }),
@@ -1936,10 +1922,37 @@ contract OPContractsManagerStandardValidator_SuperModeCoreValidation_Test is
         );
         assertEq("SPDG-ANCHORP-70,SCKDG-ANCHORP-70", _validate(true));
     }
+
+    /// @notice Tests that the validate function returns PORTAL-100 when the portal's proof maturity
+    ///         delay is outside the standard range.
+    function test_validate_optimismPortalDelayOutOfRange_succeeds() public {
+        vm.mockCall(
+            address(optimismPortal2), abi.encodeCall(IOptimismPortal2.proofMaturityDelaySeconds, ()), abi.encode(1)
+        );
+        assertEq("PORTAL-100", _validate(true));
+    }
+
+    /// @notice Tests that the validate function returns SPDG-ANCHORP-80 and SCKDG-ANCHORP-80 when
+    ///         the registry's finality delay is outside the standard range.
+    function test_validate_anchorStateRegistryDelayOutOfRange_succeeds() public {
+        vm.mockCall(
+            address(anchorStateRegistry),
+            abi.encodeCall(IAnchorStateRegistry.disputeGameFinalityDelaySeconds, ()),
+            abi.encode(1)
+        );
+        assertEq("SPDG-ANCHORP-80,SCKDG-ANCHORP-80", _validate(true));
+    }
+
+    /// @notice Tests that the validate function returns SCKDG-DWETH-40 when the DelayedWETH delay is
+    ///         outside the standard range. Only the permissionless super game carries a DelayedWETH.
+    function test_validate_delayedWETHDelayOutOfRange_succeeds() public {
+        vm.mockCall(address(delayedWeth), abi.encodeCall(IDelayedWETH.delay, ()), abi.encode(1));
+        assertEq("SCKDG-DWETH-40", _validate(true));
+    }
 }
 
 /// @title OPContractsManagerStandardValidator_SuperRootDisputeGames_Test
-/// @notice Tests the renamed SUPERSHAPE error codes (now game-specific prefixes).
+/// @notice Tests the super-root factory shape codes.
 contract OPContractsManagerStandardValidator_SuperRootDisputeGames_Test is
     OPContractsManagerStandardValidator_SuperMode_TestInit
 {
@@ -1994,14 +2007,14 @@ contract OPContractsManagerStandardValidator_SuperRootDisputeGames_Test is
         assertEq("DF-50,SPDG-SHAPE,SPDG-10", _validate(true));
     }
 
-    /// @notice Tests that disabling SUPER_CANNON_KONA triggers SCKDG-SHAPE.
-    function test_validate_superCannonKonaNotRegistered_succeeds() public {
+    /// @notice Tests DF-60 on a factory with SUPER_PERMISSIONED only.
+    function test_validate_noPermissionlessSuperGame_succeeds() public {
         vm.mockCall(
             address(disputeGameFactory),
             abi.encodeCall(IDisputeGameFactory.gameImpls, (GameTypes.SUPER_CANNON_KONA)),
             abi.encode(address(0))
         );
-        assertEq("SCKDG-SHAPE,SCKDG-10", _validate(true));
+        assertEq("DF-60", _validate(true));
     }
 }
 
@@ -2077,6 +2090,11 @@ contract OPContractsManagerStandardValidator_SuperPermissionedDisputeGame_Test i
         );
         vm.mockCall(badASR, abi.encodeCall(IProxyAdminOwnedBase.proxyAdmin, ()), abi.encode(proxyAdmin));
         vm.mockCall(badASR, abi.encodeCall(IAnchorStateRegistry.retirementTimestamp, ()), abi.encode(uint64(100)));
+        vm.mockCall(
+            badASR,
+            abi.encodeCall(IAnchorStateRegistry.disputeGameFinalityDelaySeconds, ()),
+            abi.encode(anchorStateRegistry.disputeGameFinalityDelaySeconds())
+        );
 
         assertEq("SPDG-ANCHORP-10,SPDG-ANCHORP-20,SPDG-ANCHORP-70", _validate(true));
     }
@@ -2101,17 +2119,6 @@ contract OPContractsManagerStandardValidator_SuperPermissionedDisputeGame_Test i
 contract OPContractsManagerStandardValidator_SuperPermissionlessDisputeGame_Test is
     OPContractsManagerStandardValidator_SuperMode_TestInit
 {
-    /// @notice Tests SCKDG-10 when SUPER_CANNON_KONA implementation is null.
-    ///         Also fires SCKDG-SHAPE from the shape check in assertValidSuperRootDisputeGames.
-    function test_validate_superPermissionlessDisputeGameNullImplementation_succeeds() public {
-        vm.mockCall(
-            address(disputeGameFactory),
-            abi.encodeCall(IDisputeGameFactory.gameImpls, (GameTypes.SUPER_CANNON_KONA)),
-            abi.encode(address(0))
-        );
-        assertEq("SCKDG-SHAPE,SCKDG-10", _validate(true));
-    }
-
     /// @notice Tests SCKDG-20 when SUPER_CANNON_KONA version is invalid.
     function test_validate_superPermissionlessDisputeGameInvalidVersion_succeeds() public {
         address sckdgImpl = address(disputeGameFactory.gameImpls(GameTypes.SUPER_CANNON_KONA));
@@ -2192,48 +2199,9 @@ contract OPContractsManagerStandardValidator_SuperPermissionlessDisputeGame_Test
     }
 }
 
-/// @title OPContractsManagerStandardValidator_ZKDisputeGame_Test
-/// @notice Tests that ZK dispute game validation is gated on the ZK_DISPUTE_GAME dev feature flag.
-///         These tests run in non-ZK deployment mode and verify both branches of the gating logic.
-contract OPContractsManagerStandardValidator_ZKDisputeGame_Test is OPContractsManagerStandardValidator_TestInit {
-    /// @notice Returns the devFeatureBitmap storage slot in standardValidator.
-    function _devFeatureBitmapSlot() internal returns (bytes32) {
-        return bytes32(ForgeArtifacts.getSlot("OPContractsManagerStandardValidator", "devFeatureBitmap").slot);
-    }
-
-    /// @notice Enables the ZK_DISPUTE_GAME dev feature flag in standardValidator via vm.store.
-    function _enableZKFeature() internal {
-        vm.store(address(standardValidator), _devFeatureBitmapSlot(), DevFeatures.ZK_DISPUTE_GAME);
-    }
-
-    /// @notice Tests ZKDG-NOSHAPE when ZK feature is not enabled but a ZK game is registered.
-    ///         This is the negative test ensuring the non-ZK branch of the validation is exercised.
-    function test_validate_zkDisputeGameNotExpected_succeeds() public {
-        skipIfDevFeatureEnabled(DevFeatures.ZK_DISPUTE_GAME);
-        vm.mockCall(
-            address(disputeGameFactory),
-            abi.encodeCall(IDisputeGameFactory.gameImpls, (GameTypes.ZK_DISPUTE_GAME)),
-            abi.encode(address(0xdead))
-        );
-        assertEq("ZKDG-NOSHAPE", _validate(true));
-    }
-
-    /// @notice Tests that ZK feature enabled + no ZK impl registered is valid.
-    ///         address(0) in the factory means the chain opted out of ZK (e.g. initial deployment).
-    ///         The validator should skip ZK validation entirely and report no errors.
-    function test_validate_zkFeatureEnabledNoImpl_succeeds() public {
-        skipIfDevFeatureEnabled(DevFeatures.ZK_DISPUTE_GAME);
-        // Enable the ZK feature flag in bitmap; factory still returns address(0) for ZK_DISPUTE_GAME.
-        // This is the exact state produced by an initial deployment with ZK disabled.
-        _enableZKFeature();
-        assertEq(address(disputeGameFactory.gameImpls(GameTypes.ZK_DISPUTE_GAME)), address(0));
-        assertEq("", _validate(true));
-    }
-}
-
 /// @title OPContractsManagerStandardValidator_ZKMode_TestInit
 /// @notice Base contract for post-super-root-migration ZK dispute game validator tests.
-///         Requires both ZK_DISPUTE_GAME and SUPER_ROOT_GAMES_MIGRATION.
+///         Requires SUPER_ROOT_GAMES_MIGRATION.
 ///         Configures super games plus a ZK dispute game through OPCM.
 abstract contract OPContractsManagerStandardValidator_ZKMode_TestInit is CommonTest {
     /// @notice The l2ChainId from the deploy config.
@@ -2245,6 +2213,9 @@ abstract contract OPContractsManagerStandardValidator_ZKMode_TestInit is CommonT
     /// @notice The CannonKona absolute prestate.
     Claim cannonKonaPrestate = Claim.wrap(bytes32(keccak256("cannonKonaPrestate")));
 
+    /// @notice The ZK_DISPUTE_GAME absolute prestate.
+    Claim zkPrestate = Claim.wrap(bytes32(keccak256("zkPrestate")));
+
     /// @notice The proposer role from the deploy config.
     address proposer;
 
@@ -2254,11 +2225,8 @@ abstract contract OPContractsManagerStandardValidator_ZKMode_TestInit is CommonT
     /// @notice The OPContractsManagerStandardValidator instance.
     IOPContractsManagerStandardValidator standardValidator;
 
-    /// @notice Sets up the ZK-mode test suite. Skips unless both required dev features are enabled.
+    /// @notice Sets up the ZK-mode test suite. Skips unless SUPER_ROOT_GAMES_MIGRATION is enabled.
     function setUp() public virtual override {
-        if (!Config.devFeatureZkDisputeGame()) {
-            vm.skip(true, "Skipping: DEV_FEATURE__ZK_DISPUTE_GAME is not enabled");
-        }
         if (!Config.devFeatureSuperRootGamesMigration()) {
             vm.skip(true, "Skipping: DEV_FEATURE__SUPER_ROOT_GAMES_MIGRATION is not enabled");
         }
@@ -2282,7 +2250,7 @@ abstract contract OPContractsManagerStandardValidator_ZKMode_TestInit is CommonT
             // ZK_DISPUTE_GAME is a super game: chain scoping comes from the SuperRootProof
             // preimage, so the 140-byte layout has no l2ChainId field.
             bytes memory zkArgs = abi.encodePacked(
-                bytes32(keccak256("zkPrestate")),
+                zkPrestate.raw(),
                 standardValidator.sp1PlonkAdapterImpl(),
                 uint64(7 days),
                 uint64(3 days),
@@ -2329,28 +2297,21 @@ abstract contract OPContractsManagerStandardValidator_ZKMode_TestInit is CommonT
             IOPContractsManagerUtils.DisputeGameConfig[] memory configs =
                 new IOPContractsManagerUtils.DisputeGameConfig[](6);
             configs[0] = IOPContractsManagerUtils.DisputeGameConfig({
-                enabled: false,
-                initBond: 0,
-                gameType: GameTypes.CANNON,
-                gameArgs: hex""
+                enabled: false, initBond: 0, gameType: GameTypes.CANNON, gameArgs: hex""
             });
             configs[1] = IOPContractsManagerUtils.DisputeGameConfig({
-                enabled: false,
-                initBond: 0,
-                gameType: GameTypes.PERMISSIONED_CANNON,
-                gameArgs: hex""
+                enabled: false, initBond: 0, gameType: GameTypes.PERMISSIONED_CANNON, gameArgs: hex""
             });
             configs[2] = IOPContractsManagerUtils.DisputeGameConfig({
-                enabled: false,
-                initBond: 0,
-                gameType: GameTypes.CANNON_KONA,
-                gameArgs: hex""
+                enabled: false, initBond: 0, gameType: GameTypes.CANNON_KONA, gameArgs: hex""
             });
             configs[3] = IOPContractsManagerUtils.DisputeGameConfig({
                 enabled: true,
                 initBond: 0,
                 gameType: GameTypes.SUPER_PERMISSIONED,
-                gameArgs: abi.encode(IOPContractsManagerUtils.SuperPermissionedDisputeGameConfig({ proposer: proposer }))
+                gameArgs: abi.encode(
+                    IOPContractsManagerUtils.SuperPermissionedDisputeGameConfig({ proposer: proposer })
+                )
             });
             configs[4] = IOPContractsManagerUtils.DisputeGameConfig({
                 enabled: true,
@@ -2366,7 +2327,7 @@ abstract contract OPContractsManagerStandardValidator_ZKMode_TestInit is CommonT
                 gameType: GameTypes.ZK_DISPUTE_GAME,
                 gameArgs: abi.encode(
                     IOPContractsManagerUtils.ZKDisputeGameConfig({
-                        absolutePrestate: Claim.wrap(bytes32(keccak256("zkPrestate"))),
+                        absolutePrestate: zkPrestate,
                         maxChallengeDuration: Duration.wrap(uint64(7 days)),
                         maxProveDuration: Duration.wrap(uint64(3 days)),
                         challengerBond: 0.08 ether
@@ -2377,34 +2338,39 @@ abstract contract OPContractsManagerStandardValidator_ZKMode_TestInit is CommonT
             IOPContractsManagerUtils.ExtraInstruction[] memory extraInstructions =
                 new IOPContractsManagerUtils.ExtraInstruction[](1);
             extraInstructions[0] = IOPContractsManagerUtils.ExtraInstruction({
-                key: "overrides.cfg.startingRespectedGameType",
-                data: abi.encode(GameTypes.SUPER_CANNON_KONA)
+                key: "overrides.cfg.startingRespectedGameType", data: abi.encode(GameTypes.SUPER_CANNON_KONA)
             });
 
             prankDelegateCall(owner);
-            (bool success,) = address(opcmV2).delegatecall(
-                abi.encodeCall(
-                    IOPContractsManagerV2.upgrade,
-                    (
-                        IOPContractsManagerV2.UpgradeInput({
-                            systemConfig: systemConfig,
-                            disputeGameConfigs: configs,
-                            extraInstructions: extraInstructions
-                        })
+            (bool success,) = address(opcmV2)
+                .delegatecall(
+                    abi.encodeCall(
+                        IOPContractsManagerV2.upgrade,
+                        (IOPContractsManagerV2.UpgradeInput({
+                                systemConfig: systemConfig,
+                                disputeGameConfigs: configs,
+                                extraInstructions: extraInstructions
+                            }))
                     )
-                )
-            );
+                );
             assertTrue(success, "ZK upgrade failed");
         }
     }
 
     /// @notice Runs the OPContractsManagerStandardValidator.validate function.
     function _validate(bool _allowFailure) internal view returns (string memory) {
+        return _validate(_allowFailure, zkPrestate.raw());
+    }
+
+    /// @notice Runs the OPContractsManagerStandardValidator.validate function with the given
+    ///         expected ZK prestate.
+    function _validate(bool _allowFailure, bytes32 _zkPrestate) internal view returns (string memory) {
         return standardValidator.validate(
             IOPContractsManagerStandardValidator.ValidationInputDev({
                 sysCfg: systemConfig,
                 cannonPrestate: cannonPrestate.raw(),
                 cannonKonaPrestate: cannonKonaPrestate.raw(),
+                zkPrestate: _zkPrestate,
                 l2ChainID: l2ChainId,
                 proposer: proposer
             }),
@@ -2415,10 +2381,8 @@ abstract contract OPContractsManagerStandardValidator_ZKMode_TestInit is CommonT
 
 /// @title OPContractsManagerStandardValidator_ZKValidation_Test
 /// @notice Tests for the ZK dispute game validation path in the standard validator.
-///         Only runs when ZK_DISPUTE_GAME and SUPER_ROOT_GAMES_MIGRATION are enabled.
-contract OPContractsManagerStandardValidator_ZKValidation_Test is
-    OPContractsManagerStandardValidator_ZKMode_TestInit
-{
+///         Only runs when SUPER_ROOT_GAMES_MIGRATION is enabled.
+contract OPContractsManagerStandardValidator_ZKValidation_Test is OPContractsManagerStandardValidator_ZKMode_TestInit {
     /// @notice Tests that ZK validation succeeds after the super-root migration.
     function test_validate_zkDisputeGameAfterSuperRootMigration_succeeds() public view {
         IOptimismPortal2 portal = IOptimismPortal2(payable(systemConfig.optimismPortal()));
@@ -2454,11 +2418,32 @@ contract OPContractsManagerStandardValidator_ZKValidation_Test is
         assertEq("ZKDG-150", _validate(true));
     }
 
-    /// @notice Tests ZKDG-70 when the absolutePrestate encoded in the ZK game args is zero.
+    /// @notice Tests ZKDG-70 when the ZK game args' absolutePrestate differs from zkPrestate.
+    function test_validate_zkDisputeGameWrongAbsolutePrestate_succeeds() public {
+        // absolutePrestate occupies bytes [0-31] of the packed ZK args.
+        DisputeGames.mockZKGameArg(
+            dgf, GameTypes.ZK_DISPUTE_GAME, 0, abi.encodePacked(bytes32(keccak256("otherZkPrestate")))
+        );
+        assertEq("ZKDG-70", _validate(true));
+    }
+
+    /// @notice Tests ZKDG-70 when both the registered and the expected ZK prestate are zero.
     function test_validate_zkDisputeGameZeroAbsolutePrestate_succeeds() public {
         // absolutePrestate occupies bytes [0-31] of the packed ZK args.
         DisputeGames.mockZKGameArg(dgf, GameTypes.ZK_DISPUTE_GAME, 0, abi.encodePacked(bytes32(0)));
-        assertEq("ZKDG-70", _validate(true));
+        assertEq("ZKDG-70", _validate(true, bytes32(0)));
+    }
+
+    /// @notice Tests that the ValidationInput overload, which passes zero Cannon-Kona and ZK
+    ///         prestates, reports their prestate errors on a correctly configured ZK chain.
+    function test_validate_legacyInputOnZKChain_succeeds() public view {
+        string memory errors = standardValidator.validate(
+            IOPContractsManagerStandardValidator.ValidationInput({
+                sysCfg: systemConfig, absolutePrestate: cannonPrestate.raw(), l2ChainID: l2ChainId, proposer: proposer
+            }),
+            true
+        );
+        assertEq("SCKDG-40,ZKDG-70", errors);
     }
 
     /// @notice Tests ZKDG-80 when the verifier encoded in the ZK game args is the zero address.
@@ -2578,6 +2563,23 @@ contract OPContractsManagerStandardValidator_ZKValidation_Test is
         assertEq("ASR-RGT", _validate(true));
     }
 
+    /// @notice Tests ZKDG-NOSHAPE when a chain that registers the ZK game respects a non-super game
+    ///         type, and that the code clears once the ZK game is unregistered.
+    function test_validate_zkOnNonSuperRootChain_succeeds() public {
+        IOptimismPortal2 portal = IOptimismPortal2(payable(systemConfig.optimismPortal()));
+        vm.mockCall(
+            address(portal.anchorStateRegistry()),
+            abi.encodeCall(IAnchorStateRegistry.respectedGameType, ()),
+            abi.encode(GameTypes.PERMISSIONED_CANNON)
+        );
+        assertEq("SPDG-NOSHAPE,SCKDG-NOSHAPE,ZKDG-NOSHAPE,PDDG-NOSHAPE,CKDG-NOSHAPE,PDDG-10,CKDG-10", _validate(true));
+
+        vm.mockCall(
+            address(dgf), abi.encodeCall(IDisputeGameFactory.gameImpls, (GameTypes.ZK_DISPUTE_GAME)), abi.encode(0)
+        );
+        assertEq("SPDG-NOSHAPE,SCKDG-NOSHAPE,PDDG-NOSHAPE,CKDG-NOSHAPE,PDDG-10,CKDG-10", _validate(true));
+    }
+
     /// @notice Tests ZKDG-160 when the ZK_DISPUTE_GAME init bond is zero. ZK game creation is
     ///         permissionless, so a zero bond makes root claims free.
     function test_validate_zkDisputeGameZeroInitBond_succeeds() public {
@@ -2585,6 +2587,287 @@ contract OPContractsManagerStandardValidator_ZKValidation_Test is
             address(dgf), abi.encodeCall(IDisputeGameFactory.initBonds, (GameTypes.ZK_DISPUTE_GAME)), abi.encode(0)
         );
         assertEq("ZKDG-160", _validate(true));
+    }
+
+    /// @notice Tests ZKDG-DWETH-40 when the DelayedWETH delay is outside the standard range. The ZK
+    ///         game shares the DelayedWETH with the active permissionless super game, so that game
+    ///         reports the same code.
+    function test_validate_zkDisputeGameDelayedWETHDelayOutOfRange_succeeds() public {
+        vm.mockCall(address(delayedWeth), abi.encodeCall(IDelayedWETH.delay, ()), abi.encode(1));
+        assertEq("SCKDG-DWETH-40,ZKDG-DWETH-40", _validate(true));
+    }
+
+    /// @notice Tests that SPDG+ZK without SUPER_CANNON_KONA validates with ZK respected.
+    function test_validate_zkWithoutSuperCannonKona_succeeds() public {
+        _mockWithoutSuperCannonKona(GameTypes.ZK_DISPUTE_GAME);
+        assertEq("", _validate(false));
+    }
+
+    /// @notice Tests that an SPDG+ZK chain that falls back to SUPER_PERMISSIONED still validates.
+    function test_validate_zkWithoutSuperCannonKonaPermissionedFallback_succeeds() public {
+        _mockWithoutSuperCannonKona(GameTypes.SUPER_PERMISSIONED);
+        assertEq("", _validate(false));
+    }
+
+    /// @notice Tests ASR-RGT when an unregistered SUPER_CANNON_KONA is respected.
+    function test_validate_superCannonKonaRespectedWithoutImplementation_succeeds() public {
+        _mockWithoutSuperCannonKona(GameTypes.SUPER_CANNON_KONA);
+        assertEq("ASR-RGT", _validate(true));
+    }
+
+    /// @notice Unregisters SUPER_CANNON_KONA and sets the respected game type.
+    function _mockWithoutSuperCannonKona(GameType _respectedGameType) internal {
+        IOptimismPortal2 portal = IOptimismPortal2(payable(systemConfig.optimismPortal()));
+        vm.mockCall(
+            address(portal.anchorStateRegistry()),
+            abi.encodeCall(IAnchorStateRegistry.respectedGameType, ()),
+            abi.encode(_respectedGameType)
+        );
+        vm.mockCall(
+            address(dgf), abi.encodeCall(IDisputeGameFactory.gameImpls, (GameTypes.SUPER_CANNON_KONA)), abi.encode(0)
+        );
+    }
+}
+
+/// @title OPContractsManagerStandardValidator_ValidateInterop_Test
+/// @notice Tests ordinary validation of members with distinct chain admins and shared interop contracts.
+contract OPContractsManagerStandardValidator_ValidateInterop_Test is OPContractsManagerMigrationValidator_TestInit {
+    /// @notice The ZK prestate that _upgradeMemberWithZK registers and _validationInput expects.
+    Claim internal zkPrestate = Claim.wrap(bytes32(keccak256("zkPrestate")));
+
+    /// @notice Both members must validate immediately after migration, including the non-first member.
+    function test_validate_interopMembersAfterMigration_succeeds() public view {
+        assertNotEq(address(chainContracts1.proxyAdmin), address(chainContracts2.proxyAdmin));
+        assertEq(chainContracts1.proxyAdmin.owner(), chainContracts2.proxyAdmin.owner());
+        assertEq(sharedProxyAdmin, address(chainContracts1.proxyAdmin));
+        _assertMembersValidated();
+    }
+
+    /// @notice An upgrade through either member must leave both members valid.
+    function test_validate_interopMembersAfterUpgrade_succeeds() public {
+        _upgradeMember(chainContracts2.systemConfig);
+        _assertMembersValidated();
+        _upgradeMember(chainContracts1.systemConfig);
+        _assertMembersValidated();
+    }
+
+    /// @notice Tests SPDG+ZK without SUPER_CANNON_KONA through ZK -> SUPER_PERMISSIONED -> ZK.
+    function test_validate_interopMembersZKWithoutSuperCannonKona_succeeds() public {
+        _upgradeMemberWithZK(chainContracts2.systemConfig, false, GameTypes.ZK_DISPUTE_GAME, zkPrestate);
+        assertEq(address(sharedDGF.gameImpls(GameTypes.SUPER_CANNON_KONA)), address(0));
+        _assertMembersValidated();
+
+        _upgradeMemberWithZK(chainContracts1.systemConfig, false, GameTypes.SUPER_PERMISSIONED, zkPrestate);
+        _assertMembersValidated();
+
+        _upgradeMemberWithZK(chainContracts2.systemConfig, false, GameTypes.ZK_DISPUTE_GAME, zkPrestate);
+        _assertMembersValidated();
+    }
+
+    /// @notice Tests SPDG+SUPER_CANNON_KONA+ZK with ZK respected.
+    function test_validate_interopMembersAllSuperGames_succeeds() public {
+        _upgradeMemberWithZK(chainContracts2.systemConfig, true, GameTypes.ZK_DISPUTE_GAME, zkPrestate);
+        assertNotEq(address(sharedDGF.gameImpls(GameTypes.SUPER_CANNON_KONA)), address(0));
+        _assertMembersValidated();
+    }
+
+    /// @notice A wrong shared SUPER_CANNON_KONA prestate must be rejected from either member.
+    function test_validate_interopMembersWrongSuperCannonKonaPrestate_succeeds() public {
+        _assertMembersValidated();
+        assertNotEq(cannonPrestate.raw(), cannonKonaPrestate.raw());
+        _upgradeMember(chainContracts2.systemConfig, cannonPrestate);
+
+        IOPContractsManagerStandardValidator.ValidationInputDev memory input =
+            _validationInput(chainContracts2.systemConfig);
+        string memory errors = standardValidator.validate(input, true);
+        assertEq(errors, "SCKDG-40");
+        assertEq(standardValidator.validate(_validationInput(chainContracts1.systemConfig), true), errors);
+        vm.expectRevert(bytes("OPContractsManagerStandardValidator: SCKDG-40"));
+        standardValidator.validate(input, false);
+    }
+
+    /// @notice A wrong shared ZK_DISPUTE_GAME prestate must be rejected from either member.
+    function test_validate_interopMembersWrongZKPrestate_succeeds() public {
+        _upgradeMemberWithZK(
+            chainContracts2.systemConfig,
+            false,
+            GameTypes.ZK_DISPUTE_GAME,
+            Claim.wrap(bytes32(keccak256("otherZkPrestate")))
+        );
+
+        IOPContractsManagerStandardValidator.ValidationInputDev memory input =
+            _validationInput(chainContracts2.systemConfig);
+        string memory errors = standardValidator.validate(input, true);
+        assertEq(errors, "ZKDG-70");
+        assertEq(standardValidator.validate(_validationInput(chainContracts1.systemConfig), true), errors);
+        vm.expectRevert(bytes("OPContractsManagerStandardValidator: ZKDG-70"));
+        standardValidator.validate(input, false);
+    }
+
+    /// @notice Discovering the shared admin must still check its expected PAO owner.
+    function test_validate_sharedProxyAdminWrongOwner_succeeds() public {
+        vm.mockCall(sharedProxyAdmin, abi.encodeCall(IProxyAdmin.owner, ()), abi.encode(makeAddr("wrongSharedOwner")));
+        // The shared DelayedWETH reads its owner through the same ProxyAdmin, so its owner check
+        // fails too.
+        string memory expected = "SHARED-PROXYA-10,SCKDG-DWETH-30";
+        IOPContractsManagerStandardValidator.ValidationInputDev memory input =
+            _validationInput(chainContracts2.systemConfig);
+        assertEq(standardValidator.validate(input, true), expected);
+        vm.expectRevert(bytes(string.concat("OPContractsManagerStandardValidator: ", expected)));
+        standardValidator.validate(input, false);
+    }
+
+    /// @notice The shared ProxyAdmin owner check must use the L1 PAO multisig override.
+    function test_validateWithOverrides_l1PAOMultisigMismatch_succeeds() public {
+        IOPContractsManagerStandardValidator.ValidationOverrides memory overrides =
+            IOPContractsManagerStandardValidator.ValidationOverrides({
+                l1PAOMultisig: makeAddr("wrongMultisig"), challenger: address(0)
+            });
+        // No owner matches the override, so the member's ProxyAdmin, the shared ProxyAdmin, the
+        // factory and the shared DelayedWETH all fail their owner checks.
+        assertEq(
+            standardValidator.validateWithOverrides(_validationInput(chainContracts2.systemConfig), true, overrides),
+            "OVERRIDES-L1PAOMULTISIG,PROXYA-10,SHARED-PROXYA-10,DF-30,SCKDG-DWETH-30"
+        );
+    }
+
+    /// @notice Shared implementation checks must still reject a non-standard implementation.
+    function test_validate_sharedFactoryWrongImplementation_succeeds() public {
+        vm.mockCall(
+            sharedProxyAdmin,
+            abi.encodeCall(IProxyAdmin.getProxyImplementation, (address(sharedDGF))),
+            abi.encode(address(0xbad))
+        );
+        assertEq(standardValidator.validate(_validationInput(chainContracts2.systemConfig), true), "DF-20");
+    }
+
+    /// @notice Each shared contract must report the factory's ProxyAdmin. The mocks change only the
+    ///         reported admin: a contract that another ProxyAdmin really administers reverts at
+    ///         its implementation check before these comparisons run.
+    function test_validate_sharedContractsWrongAdmin_succeeds() public {
+        bytes memory memberAdmin = abi.encode(address(chainContracts2.proxyAdmin));
+        vm.mockCall(address(sharedLockbox), abi.encodeCall(IProxyAdminOwnedBase.proxyAdmin, ()), memberAdmin);
+        vm.mockCall(sharedWETH, abi.encodeCall(IProxyAdminOwnedBase.proxyAdmin, ()), memberAdmin);
+        vm.mockCall(sharedASR, abi.encodeCall(IProxyAdminOwnedBase.proxyAdmin, ()), memberAdmin);
+        assertEq(
+            standardValidator.validate(_validationInput(chainContracts2.systemConfig), true),
+            "SPDG-ANCHORP-50,SCKDG-DWETH-60,SCKDG-ANCHORP-50,LOCKBOX-30"
+        );
+    }
+
+    /// @notice Checks ordinary validation and the allowFailure/override path used by upgrade tasks.
+    function _assertMembersValidated() internal view {
+        ISystemConfig[2] memory members = [chainContracts1.systemConfig, chainContracts2.systemConfig];
+        IOPContractsManagerStandardValidator.ValidationOverrides memory overrides =
+            IOPContractsManagerStandardValidator.ValidationOverrides({
+                l1PAOMultisig: standardValidator.l1PAOMultisig(), challenger: address(0)
+            });
+        for (uint256 i; i < members.length; i++) {
+            IOPContractsManagerStandardValidator.ValidationInputDev memory input = _validationInput(members[i]);
+            assertEq(standardValidator.validate(input, false), "");
+            assertEq(standardValidator.validateWithOverrides(input, true, overrides), "OVERRIDES-L1PAOMULTISIG");
+        }
+    }
+
+    /// @notice Builds ordinary validation input from the migrated chain and migration game parameters.
+    function _validationInput(ISystemConfig _sysCfg)
+        internal
+        view
+        returns (IOPContractsManagerStandardValidator.ValidationInputDev memory)
+    {
+        return IOPContractsManagerStandardValidator.ValidationInputDev({
+            sysCfg: _sysCfg,
+            cannonPrestate: cannonPrestate.raw(),
+            cannonKonaPrestate: cannonKonaPrestate.raw(),
+            zkPrestate: zkPrestate.raw(),
+            l2ChainID: _sysCfg.l2ChainId(),
+            proposer: proposer
+        });
+    }
+
+    /// @notice Re-applies both super games through a member's ordinary OPCM upgrade path.
+    function _upgradeMember(ISystemConfig _sysCfg) internal {
+        _upgradeMember(_sysCfg, cannonKonaPrestate);
+    }
+
+    /// @notice Re-applies both super games with the supplied SUPER_CANNON_KONA prestate.
+    function _upgradeMember(ISystemConfig _sysCfg, Claim _cannonKonaPrestate) internal {
+        IOPContractsManagerUtils.DisputeGameConfig[] memory configs =
+            new IOPContractsManagerUtils.DisputeGameConfig[](6);
+        configs[0].gameType = GameTypes.CANNON;
+        configs[1].gameType = GameTypes.PERMISSIONED_CANNON;
+        configs[2].gameType = GameTypes.CANNON_KONA;
+        IOPContractsManagerUtils.DisputeGameConfig[] memory migratedGames = _getDefaultMigrateInput().disputeGameConfigs;
+        configs[3] = migratedGames[0];
+        configs[4] = migratedGames[1];
+        configs[4].gameArgs =
+            abi.encode(IOPContractsManagerUtils.FaultDisputeGameConfig({ absolutePrestate: _cannonKonaPrestate }));
+        configs[5].gameType = GameTypes.ZK_DISPUTE_GAME;
+
+        IOPContractsManagerV2.UpgradeInput memory input;
+        input.systemConfig = _sysCfg;
+        input.disputeGameConfigs = configs;
+        prankDelegateCall(_sysCfg.proxyAdmin().owner());
+        (bool success,) = address(opcmV2).delegatecall(abi.encodeCall(IOPContractsManagerV2.upgrade, (input)));
+        assertTrue(success, "interop member upgrade failed");
+    }
+
+    /// @notice Registers ZK_DISPUTE_GAME through a member's ordinary OPCM upgrade path, optionally
+    ///         keeping SUPER_CANNON_KONA, and sets the respected game type.
+    function _upgradeMemberWithZK(
+        ISystemConfig _sysCfg,
+        bool _keepSuperCannonKona,
+        GameType _respectedGameType,
+        Claim _zkPrestate
+    )
+        internal
+    {
+        IOPContractsManagerUtils.DisputeGameConfig[] memory configs =
+            new IOPContractsManagerUtils.DisputeGameConfig[](6);
+        configs[0].gameType = GameTypes.CANNON;
+        configs[1].gameType = GameTypes.PERMISSIONED_CANNON;
+        configs[2].gameType = GameTypes.CANNON_KONA;
+        IOPContractsManagerUtils.DisputeGameConfig[] memory migratedGames = _getDefaultMigrateInput().disputeGameConfigs;
+        configs[3] = migratedGames[0];
+        if (_keepSuperCannonKona) {
+            configs[4] = migratedGames[1];
+        } else {
+            configs[4] = IOPContractsManagerUtils.DisputeGameConfig({
+                enabled: false, initBond: 0, gameType: GameTypes.SUPER_CANNON_KONA, gameArgs: hex""
+            });
+        }
+        configs[5] = IOPContractsManagerUtils.DisputeGameConfig({
+            enabled: true,
+            initBond: 0.08 ether,
+            gameType: GameTypes.ZK_DISPUTE_GAME,
+            gameArgs: abi.encode(
+                IOPContractsManagerUtils.ZKDisputeGameConfig({
+                    absolutePrestate: _zkPrestate,
+                    maxChallengeDuration: Duration.wrap(uint64(7 days)),
+                    maxProveDuration: Duration.wrap(uint64(3 days)),
+                    challengerBond: 0.08 ether
+                })
+            )
+        });
+
+        IOPContractsManagerUtils.ExtraInstruction[] memory extraInstructions =
+            new IOPContractsManagerUtils.ExtraInstruction[](1);
+        extraInstructions[0] = IOPContractsManagerUtils.ExtraInstruction({
+            key: "overrides.cfg.startingRespectedGameType", data: abi.encode(_respectedGameType)
+        });
+
+        IOPContractsManagerV2.UpgradeInput memory input;
+        input.systemConfig = _sysCfg;
+        input.disputeGameConfigs = configs;
+        input.extraInstructions = extraInstructions;
+        prankDelegateCall(_sysCfg.proxyAdmin().owner());
+        (bool success,) = address(opcmV2).delegatecall(abi.encodeCall(IOPContractsManagerV2.upgrade, (input)));
+        assertTrue(success, "interop member ZK upgrade failed");
+        assertEq(
+            IAnchorStateRegistry(sharedASR).respectedGameType().raw(),
+            _respectedGameType.raw(),
+            "respected game type not applied"
+        );
     }
 }
 
@@ -2649,8 +2932,10 @@ contract OPContractsManagerStandardValidator_ValidateMigratedChain_Test is
         // DelayedWETH proxyAdminOwner must also match overridden l1PAOMultisig.
         vm.mockCall(sharedWETH, abi.encodeCall(IProxyAdminOwnedBase.proxyAdminOwner, ()), abi.encode(overrideMultisig));
 
-        IOPContractsManagerStandardValidator.ValidationOverrides memory overrides = IOPContractsManagerStandardValidator
-            .ValidationOverrides({ l1PAOMultisig: overrideMultisig, challenger: address(0) });
+        IOPContractsManagerStandardValidator.ValidationOverrides memory overrides =
+            IOPContractsManagerStandardValidator.ValidationOverrides({
+                l1PAOMultisig: overrideMultisig, challenger: address(0)
+            });
         string memory errors = standardValidator.validateMigratedChainWithOverrides(_migrationInput(), true, overrides);
         assertEq(errors, "");
     }
@@ -2661,8 +2946,10 @@ contract OPContractsManagerStandardValidator_ValidateMigratedChain_Test is
         // Use a different address as override — DGF owner stays as the real l1PAOMultisig,
         // so the override causes a mismatch.
         address wrongMultisig = makeAddr("wrongMultisig");
-        IOPContractsManagerStandardValidator.ValidationOverrides memory overrides = IOPContractsManagerStandardValidator
-            .ValidationOverrides({ l1PAOMultisig: wrongMultisig, challenger: address(0) });
+        IOPContractsManagerStandardValidator.ValidationOverrides memory overrides =
+            IOPContractsManagerStandardValidator.ValidationOverrides({
+                l1PAOMultisig: wrongMultisig, challenger: address(0)
+            });
         string memory errors = standardValidator.validateMigratedChainWithOverrides(_migrationInput(), true, overrides);
         // l1PAOMultisig override causes DGF owner mismatch (MIG-SDGF-30) and surfaces the shared
         // DelayedWETH proxyAdminOwner mismatch through the bonded super-game drill-down.

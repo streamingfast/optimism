@@ -2,11 +2,18 @@
 pragma solidity 0.8.15;
 
 // Testing
-import { DisputeGameFactory_TestInit } from "test/dispute/DisputeGameFactory.t.sol";
+import { DisputeGameFactory_TestInit } from "test/setup/DisputeGameFactoryTestInit.sol";
 
 // Libraries
-import { DevFeatures } from "src/libraries/DevFeatures.sol";
-import { BondDistributionMode, Claim, Duration, GameStatus, GameType, Hash, Timestamp } from "src/dispute/lib/Types.sol";
+import {
+    BondDistributionMode,
+    Claim,
+    Duration,
+    GameStatus,
+    GameType,
+    Hash,
+    Timestamp
+} from "src/dispute/lib/Types.sol";
 import { GameTypes } from "src/dispute/lib/Types.sol";
 import { NoCreditToClaim, UnknownChainId } from "src/dispute/lib/Errors.sol";
 import { Types } from "src/libraries/Types.sol";
@@ -113,7 +120,6 @@ contract ZKDisputeGame_Integration_Test is DisputeGameFactory_TestInit {
 
     function setUp() public virtual override {
         super.setUp();
-        skipIfDevFeatureDisabled(DevFeatures.ZK_DISPUTE_GAME);
 
         // Register the ZK dispute game implementation.
         setupZKDisputeGame(

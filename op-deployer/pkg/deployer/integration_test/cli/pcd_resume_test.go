@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/opcm"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/pipeline"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/state"
-	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/upgrade/embedded"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -109,12 +109,15 @@ func TestCLIPCDResume(t *testing.T) {
 		require.NotNil(t, frozen.genesisTime)
 		journey.restartCold(committedWorkdir)
 
-		elapsedTimestamp := uint64(*frozen.genesisTime) + 1
-		require.NoError(t, journey.l1Client.Client().Call(nil, "anvil_setNextBlockTimestamp", elapsedTimestamp))
-		require.NoError(t, journey.l1Client.Client().Call(nil, "evm_mine"))
 		head, err := journey.l1Client.HeaderByNumber(t.Context(), nil)
 		require.NoError(t, err)
-		require.Greater(t, head.Time, uint64(*frozen.genesisTime))
+		// Move L1 past the committed genesis time by more than the warn threshold (1 hour).
+		elapsedTimestamp := max(uint64(*frozen.genesisTime)+3601, head.Time+1)
+		require.NoError(t, journey.l1Client.Client().Call(nil, "anvil_setNextBlockTimestamp", elapsedTimestamp))
+		require.NoError(t, journey.l1Client.Client().Call(nil, "evm_mine"))
+		head, err = journey.l1Client.HeaderByNumber(t.Context(), nil)
+		require.NoError(t, err)
+		require.Greater(t, head.Time, uint64(*frozen.genesisTime)+3600)
 
 		_, output := journey.runContinueWithOutput()
 		require.Contains(t, output, "committed genesis time has elapsed")
@@ -353,7 +356,7 @@ func newPCDResumeJourney(t *testing.T, boundary pcdResumeBoundary, prestate comm
 	t.Helper()
 	journey := newPCDJourneyFixture(t, []common.Hash{uint256.NewInt(1).Bytes32()})
 	journey.bootstrapOPCM()
-	journey.runInit(embedded.GameTypeSuperCannonKona)
+	journey.runInit(opcm.GameTypeSuperCannonKona)
 	if boundary >= pcdAfterPrepare {
 		journey.runPrepare()
 	}
@@ -499,8 +502,8 @@ func requirePCDSingletonCompletion(
 			portal:                        preparedChain.OptimismPortalProxy,
 			disputeGameFactory:            preparedChain.DisputeGameFactoryProxy,
 			anchorStateRegistry:           preparedChain.AnchorStateRegistryProxy,
-			respectedGameType:             embedded.GameTypeSuperCannonKona,
-			fallbackGameType:              embedded.GameTypeSuperPermissioned,
+			respectedGameType:             opcm.GameTypeSuperCannonKona,
+			fallbackGameType:              opcm.GameTypeSuperPermissioned,
 			respectedGameImplementation:   preparedChain.FaultDisputeGameImpl,
 			fallbackGameImplementation:    preparedChain.PermissionedDisputeGameImpl,
 			respectedGameAbsolutePrestate: prestate,

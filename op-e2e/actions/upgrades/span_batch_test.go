@@ -59,13 +59,13 @@ func TestDropSpanBatchBeforeHardfork(gt *testing.T) {
 		BatcherKey:           dp.Secrets.Batcher,
 		ForceSubmitSpanBatch: true,
 		DataAvailabilityType: batcherFlags.CalldataType,
-	}, rollupSeqCl, miner.EthClient(), seqEngine.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
+	}, rollupSeqCl, miner.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
 
 	// Alice makes a L2 tx
 	cl := seqEngine.EthClient()
 	n, err := cl.PendingNonceAt(t.Ctx(), dp.Addresses.Alice)
 	require.NoError(t, err)
-	signer := types.LatestSigner(sd.L2Cfg.Config)
+	signer := types.LatestSignerForChainID(sd.L2Cfg.Config.ChainID)
 	tx := types.MustSignNewTx(dp.Secrets.Alice, signer, &types.DynamicFeeTx{
 		ChainID:   sd.L2Cfg.Config.ChainID,
 		Nonce:     n,
@@ -158,13 +158,13 @@ func TestHardforkMiddleOfSpanBatch(gt *testing.T) {
 		BatcherKey:           dp.Secrets.Batcher,
 		ForceSubmitSpanBatch: true,
 		DataAvailabilityType: batcherFlags.CalldataType,
-	}, rollupSeqCl, miner.EthClient(), seqEngine.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
+	}, rollupSeqCl, miner.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
 
 	// Alice makes a L2 tx
 	cl := seqEngine.EthClient()
 	n, err := cl.PendingNonceAt(t.Ctx(), dp.Addresses.Alice)
 	require.NoError(t, err)
-	signer := types.LatestSigner(sd.L2Cfg.Config)
+	signer := types.LatestSignerForChainID(sd.L2Cfg.Config.ChainID)
 	tx := types.MustSignNewTx(dp.Secrets.Alice, signer, &types.DynamicFeeTx{
 		ChainID:   sd.L2Cfg.Config.ChainID,
 		Nonce:     n,
@@ -266,13 +266,13 @@ func TestAcceptSingularBatchAfterHardfork(gt *testing.T) {
 		BatcherKey:               dp.Secrets.Batcher,
 		ForceSubmitSingularBatch: true,
 		DataAvailabilityType:     batcherFlags.CalldataType,
-	}, rollupSeqCl, miner.EthClient(), seqEngine.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
+	}, rollupSeqCl, miner.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
 
 	// Alice makes a L2 tx
 	cl := seqEngine.EthClient()
 	n, err := cl.PendingNonceAt(t.Ctx(), dp.Addresses.Alice)
 	require.NoError(t, err)
-	signer := types.LatestSigner(sd.L2Cfg.Config)
+	signer := types.LatestSignerForChainID(sd.L2Cfg.Config.ChainID)
 	tx := types.MustSignNewTx(dp.Secrets.Alice, signer, &types.DynamicFeeTx{
 		ChainID:   sd.L2Cfg.Config.ChainID,
 		Nonce:     n,
@@ -356,7 +356,7 @@ func TestMixOfBatchesAfterHardfork(gt *testing.T) {
 		// Alice makes a L2 tx
 		n, err := seqEngCl.PendingNonceAt(t.Ctx(), dp.Addresses.Alice)
 		require.NoError(t, err)
-		signer := types.LatestSigner(sd.L2Cfg.Config)
+		signer := types.LatestSignerForChainID(sd.L2Cfg.Config.ChainID)
 		tx := types.MustSignNewTx(dp.Secrets.Alice, signer, &types.DynamicFeeTx{
 			ChainID:   sd.L2Cfg.Config.ChainID,
 			Nonce:     n,
@@ -385,7 +385,7 @@ func TestMixOfBatchesAfterHardfork(gt *testing.T) {
 			ForceSubmitSingularBatch: i%2 == 1, // Submit SingularBatch for even numbered batches
 			DataAvailabilityType:     batcherFlags.CalldataType,
 		}
-		batcher := actionsHelpers.NewL2Batcher(log, sd.RollupCfg, &batcherCfg, rollupSeqCl, miner.EthClient(), seqEngine.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
+		batcher := actionsHelpers.NewL2Batcher(log, sd.RollupCfg, &batcherCfg, rollupSeqCl, miner.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
 		// Submit all new blocks
 		batcher.ActSubmitAll(t)
 
@@ -438,7 +438,7 @@ func TestSpanBatchEmptyChain(gt *testing.T) {
 
 	rollupSeqCl := sequencer.RollupClient()
 	batcher := actionsHelpers.NewL2Batcher(log, sd.RollupCfg, actionsHelpers.DefaultBatcherCfg(dp),
-		rollupSeqCl, miner.EthClient(), seqEngine.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
+		rollupSeqCl, miner.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
 
 	sequencer.ActL2PipelineFull(t)
 	verifier.ActL2PipelineFull(t)
@@ -502,7 +502,7 @@ func TestSpanBatchLowThroughputChain(gt *testing.T) {
 
 	rollupSeqCl := sequencer.RollupClient()
 	batcher := actionsHelpers.NewL2Batcher(log, sd.RollupCfg, actionsHelpers.DefaultBatcherCfg(dp),
-		rollupSeqCl, miner.EthClient(), seqEngine.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
+		rollupSeqCl, miner.EthClient(), seqEngine.EngineClient(t, sd.RollupCfg))
 	cl := seqEngine.EthClient()
 
 	const numTestUsers = 5
@@ -537,13 +537,13 @@ func TestSpanBatchLowThroughputChain(gt *testing.T) {
 			// fill the block with random number of L2 txs
 			for j := 0; j < rand.Intn(3); j++ {
 				userIdx := totalTxCount % numTestUsers
-				signer := types.LatestSigner(sd.L2Cfg.Config)
+				signer := types.LatestSignerForChainID(sd.L2Cfg.Config.ChainID)
 				data := make([]byte, rand.Intn(100))
 				_, err := crand.Read(data[:]) // fill with random bytes
 				require.NoError(t, err)
 				gas, err := core.IntrinsicGas(data, nil, nil, false, true, true, false)
 				require.NoError(t, err)
-				baseFee := seqEngine.L2Chain().CurrentBlock().BaseFee
+				baseFee := seqEngine.LatestHeader(t).BaseFee
 				nonce, err := cl.PendingNonceAt(t.Ctx(), addrs[userIdx])
 				require.NoError(t, err)
 				tx := types.MustSignNewTx(privKeys[userIdx], signer, &types.DynamicFeeTx{
@@ -640,7 +640,7 @@ func TestBatchEquivalence(gt *testing.T) {
 		BatcherKey:           dp.Secrets.Batcher,
 		ForceSubmitSpanBatch: true,
 		DataAvailabilityType: batcherFlags.CalldataType,
-	}, rollupSeqCl, miner.EthClient(), seqEngine.EthClient(), seqEngine.EngineClient(t, sdDeltaActivated.RollupCfg))
+	}, rollupSeqCl, miner.EthClient(), seqEngine.EngineClient(t, sdDeltaActivated.RollupCfg))
 
 	// Setup SingularBatcher
 	singularBatcher := actionsHelpers.NewL2Batcher(log, sdDeltaDeactivated.RollupCfg, &actionsHelpers.BatcherCfg{
@@ -649,7 +649,7 @@ func TestBatchEquivalence(gt *testing.T) {
 		BatcherKey:               dp.Secrets.Batcher,
 		ForceSubmitSingularBatch: true,
 		DataAvailabilityType:     batcherFlags.CalldataType,
-	}, rollupSeqCl, miner.EthClient(), seqEngine.EthClient(), seqEngine.EngineClient(t, sdDeltaDeactivated.RollupCfg))
+	}, rollupSeqCl, miner.EthClient(), seqEngine.EngineClient(t, sdDeltaDeactivated.RollupCfg))
 
 	const numTestUsers = 5
 	var privKeys [numTestUsers]*ecdsa.PrivateKey
@@ -677,13 +677,13 @@ func TestBatchEquivalence(gt *testing.T) {
 		// fill the block with random number of L2 txs
 		for j := 0; j < rand.Intn(3); j++ {
 			userIdx := totalTxCount % numTestUsers
-			signer := types.LatestSigner(sdDeltaActivated.L2Cfg.Config)
+			signer := types.LatestSignerForChainID(sdDeltaActivated.L2Cfg.Config.ChainID)
 			data := make([]byte, rand.Intn(100))
 			_, err := crand.Read(data[:]) // fill with random bytes
 			require.NoError(t, err)
 			gas, err := core.IntrinsicGas(data, nil, nil, false, true, true, false)
 			require.NoError(t, err)
-			baseFee := seqEngine.L2Chain().CurrentBlock().BaseFee
+			baseFee := seqEngine.LatestHeader(t).BaseFee
 			nonce, err := seqEngCl.PendingNonceAt(t.Ctx(), addrs[userIdx])
 			require.NoError(t, err)
 			tx := types.MustSignNewTx(privKeys[userIdx], signer, &types.DynamicFeeTx{
