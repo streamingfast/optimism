@@ -114,6 +114,7 @@
 //! the traced twin.
 
 use alloy_consensus::transaction::{Either, TxHashRef};
+use alloy_eip7928::bal::RawBal;
 use alloy_evm::Evm;
 use alloy_primitives::{
     B256,
@@ -137,16 +138,17 @@ use reth_engine_primitives::{
 // tracing: no tracer event is emitted or altered by which state-root strategy runs.
 use reth_engine_tree::tree::{
     CacheWaitDurations, CachedStateProvider, EngineApiMetrics, EngineApiTreeState, ExecutionEnv,
-    PayloadHandle, PayloadProcessor, StateProviderBuilder, TreeConfig, ValidationOutput,
-    WaitForCaches,
-    error::{InsertBlockError, InsertBlockErrorKind, InsertPayloadError},
+    PayloadHandle, PayloadProcessor, TreeConfig, ValidationOutput, WaitForCaches,
+    error::{
+        BlockAccessListDecodeError, InsertBlockError, InsertBlockErrorKind, InsertPayloadError,
+    },
     instrumented_state::{InstrumentedStateProvider, StateProviderStats},
     payload_processor::receipt_root_task::{IndexedReceipt, ReceiptRootTaskHandle},
     payload_validator::{BlockOrPayload, EngineValidator, TreeCtx, ValidationOutcome},
     precompile_cache::{CachedPrecompile, CachedPrecompileMetrics, PrecompileCacheMap},
     state_root_strategy::{StateRootHintStream, StateRootUpdateStream},
 };
-use reth_errors::{BlockExecutionError, ProviderResult};
+use reth_errors::{BlockExecutionError, BlockValidationError, ProviderResult};
 use reth_evm::{
     ConfigureEvm, EvmEnvFor, ExecutionCtxFor, OnStateHook, SpecFor, block::BlockExecutor,
     execute::ExecutableTxFor,
@@ -159,13 +161,14 @@ use reth_payload_primitives::{
 };
 use reth_primitives_traits::{
     AlloyBlockHeader, BlockBody, FastInstant as Instant, GotExpected, NodePrimitives,
-    RecoveredBlock, SealedBlock, SealedHeader, SignerRecoverable,
+    RecoveredBlock, SealedBlock, SealedBlockWith, SealedHeader, SignerRecoverable,
 };
 use reth_provider::{
-    BlockExecutionOutput, BlockReader, ChangeSetReader, DatabaseProviderFactory,
-    DatabaseProviderROFactory, ProviderError, PruneCheckpointReader, StageCheckpointReader,
-    StateProvider, StateProviderBox, StateProviderFactory, StateReader, StorageChangeSetReader,
-    StorageSettingsCache, TryIntoHistoricalStateProvider,
+    BlockExecutionOutput, BlockHashReader, BlockReader, ChangeSetReader, DatabaseProviderFactory,
+    DatabaseProviderROFactory, HashedPostStateProvider, HistoryReader, ProviderError,
+    PruneCheckpointReader, StageCheckpointReader, StateProvider, StateProviderBox,
+    StateProviderFactory, StateReader, StateRootProvider, StorageChangeSetReader,
+    StorageSettingsCache,
 };
 use reth_revm::{
     database::StateProviderDatabase,
@@ -274,12 +277,13 @@ where
     N: NodePrimitives,
     P: DatabaseProviderFactory<
             Provider: BlockReader
+                          + BlockHashReader
                           + StageCheckpointReader
                           + PruneCheckpointReader
                           + ChangeSetReader
                           + StorageChangeSetReader
                           + StorageSettingsCache
-                          + TryIntoHistoricalStateProvider
+                          + HistoryReader
                           + 'static,
         > + BlockReader<Header = N::BlockHeader>
         + ChangeSetReader
@@ -287,8 +291,14 @@ where
         + StateReader
         + Clone
         + 'static,
-    OverlayStateProviderFactory<P, N>: DatabaseProviderROFactory<Provider: TrieCursorFactory + HashedCursorFactory>
-        + Clone
+    OverlayStateProviderFactory<P, N>: DatabaseProviderROFactory<
+            Provider: TrieCursorFactory
+                          + HashedCursorFactory
+                          + HashedPostStateProvider
+                          + StateRootProvider
+                          + StateProvider
+                          + Send,
+        > + Clone
         + 'static,
     Evm: ConfigureEvm<Primitives = N> + 'static,
 {
@@ -338,7 +348,7 @@ where
     {
         match input {
             BlockOrPayload::Payload(payload) => self.validator.convert_payload_to_block(payload),
-            BlockOrPayload::Block(block) => Ok(block),
+            BlockOrPayload::Block(block) => Ok(block.split().0),
         }
     }
 
@@ -494,7 +504,7 @@ where
                     Either::Left(handle) => handle.try_into_inner().expect("sole handle"),
                     Either::Right(()) => {
                         let BlockOrPayload::Block(block) = input else { unreachable!() };
-                        Ok(block)
+                        Ok(block.split().0)
                     }
                 }
             };
@@ -533,8 +543,8 @@ where
         trace!(target: "engine::tree::payload_validator", "Fetching block state provider");
         let _enter =
             debug_span!(target: "engine::tree::payload_validator", "state_provider").entered();
-        let Some(provider_builder) =
-            ensure_ok!(self.state_provider_builder(parent_hash, ctx.state()))
+        let Some(state_provider_factory) =
+            ensure_ok!(self.overlay_state_provider_factory(parent_hash, ctx.state()))
         else {
             // this is pre-validated in the tree
             return Err(InsertBlockError::new(
@@ -543,7 +553,11 @@ where
             )
             .into());
         };
-        let mut state_provider = ensure_ok!(provider_builder.build());
+        let mut state_provider = ensure_ok!(
+            state_provider_factory
+                .database_provider_ro()
+                .map(|provider| Box::new(provider) as StateProviderBox)
+        );
         drop(_enter);
 
         // Fetch parent block. This goes to memory most of the time unless the parent block is
@@ -561,13 +575,11 @@ where
             .in_scope(|| self.evm_env_for(&input))
             .map_err(NewPayloadError::other)?;
 
-        // Extract the decoded BAL, if valid and available.
-        let decoded_bal = ensure_ok!(
-            input
-                .try_decoded_access_list()
-                .map_err(|err| { Box::<dyn std::error::Error + Send + Sync>::from(err) })
-        )
-        .map(Arc::new);
+        // Extract the decoded BAL, if present. Undecodable block access list bytes invalidate the
+        // payload.
+        let decoded_bal =
+            ensure_ok!(input.try_decoded_access_list().map_err(BlockAccessListDecodeError::new))
+                .map(Arc::new);
 
         if let Some(decoded_bal) = decoded_bal.as_deref() {
             // Reject oversized BAL sidecars before executing the block.
@@ -620,7 +632,7 @@ where
         let mut handle = ensure_ok!(self.spawn_payload_processor(
             env.clone(),
             txs,
-            provider_builder.clone(),
+            state_provider_factory.clone(),
             hint_stream,
             hashed_update_stream,
             parallel_bal_execution,
@@ -690,11 +702,11 @@ where
             // `input` is now a fully-resolved `Block`. Rebuild the lazy `convert_to_block`
             // closure as a trivial no-op — safe here, and only here, because we just rewrote
             // `input` ourselves.
-            let input = BlockOrPayload::Block(sealed);
+            let input = BlockOrPayload::Block(SealedBlockWith::from_block(sealed));
             let convert_to_block: Box<
                 dyn FnOnce(BlockOrPayload<T>) -> Result<SealedBlock<N::Block>, NewPayloadError>,
             > = Box::new(|input: BlockOrPayload<T>| match input {
-                BlockOrPayload::Block(block) => Ok(block),
+                BlockOrPayload::Block(block) => Ok(block.split().0),
                 BlockOrPayload::Payload(_) => {
                     unreachable!("convert_to_block already resolved input to Block")
                 }
@@ -825,7 +837,11 @@ where
                 || hashed_state.get(),
                 &block,
                 &parent_block,
-                || provider_builder.build(),
+                || {
+                    state_provider_factory
+                        .database_provider_ro()
+                        .map(|provider| Box::new(provider) as _)
+                },
             )
         });
 
@@ -843,8 +859,9 @@ where
         debug!(target: "engine::tree::payload_validator", "Using synchronous state root computation");
         let (state_root, trie_output) = {
             let (root, updates) = ensure_ok_post_block!(
-                provider_builder
-                    .build()
+                state_provider_factory
+                    .database_provider_ro()
+                    .map(|provider| Box::new(provider) as StateProviderBox)
                     .and_then(|provider| Self::compute_state_root_serial(provider, &hashed_state)),
                 block
             );
@@ -1243,7 +1260,7 @@ where
             };
             self.metrics.record_transaction_wait(wait_start.elapsed());
 
-            let tx = tx_result.map_err(BlockExecutionError::other)?;
+            let tx = tx_result.map_err(BlockValidationError::other)?;
             let tx_signer = *<Tx as alloy_evm::RecoveredTx<InnerTx>>::signer(&tx);
 
             senders.push(tx_signer);
@@ -1363,7 +1380,7 @@ where
         &self,
         env: ExecutionEnv<Evm>,
         txs: T,
-        provider_builder: StateProviderBuilder<N, P>,
+        state_provider_factory: OverlayStateProviderFactory<P, N>,
         hint_stream: Option<StateRootHintStream>,
         hashed_update_stream: Option<StateRootUpdateStream>,
         parallel_bal_execution: bool,
@@ -1379,7 +1396,7 @@ where
         let handle = self.payload_processor.spawn_with_state_root_streams(
             env,
             txs,
-            provider_builder,
+            state_provider_factory,
             hint_stream,
             hashed_update_stream,
             parallel_bal_execution,
@@ -1390,23 +1407,22 @@ where
         Ok(handle)
     }
 
-    /// Creates a `StateProviderBuilder` for the given parent hash.
+    /// Creates an overlay state provider factory for the given parent hash.
     ///
     /// Returns `None` when the parent is neither in memory nor persisted.
-    fn state_provider_builder(
+    fn overlay_state_provider_factory(
         &self,
         hash: B256,
         state: &EngineApiTreeState<N>,
-    ) -> ProviderResult<Option<StateProviderBuilder<N, P>>> {
+    ) -> ProviderResult<Option<OverlayStateProviderFactory<P, N>>> {
         if !state.tree_state().contains_hash(&hash) && self.provider.header(hash)?.is_none() {
             debug!(target: "engine::tree::payload_validator", %hash, "no canonical state found for block");
             return Ok(None);
         }
 
-        Ok(Some(StateProviderBuilder::new(
+        Ok(Some(OverlayStateProviderFactory::new(
             self.provider.clone(),
-            hash,
-            state.tree_state().state_trie_overlays().clone(),
+            state.tree_state().state_trie_overlays().overlay_builder(hash),
         )))
     }
 
@@ -1663,12 +1679,13 @@ impl<N, Types, P, Evm, V> EngineValidator<Types> for OpFirehoseEngineValidator<P
 where
     P: DatabaseProviderFactory<
             Provider: BlockReader
+                          + BlockHashReader
                           + StageCheckpointReader
                           + PruneCheckpointReader
                           + ChangeSetReader
                           + StorageChangeSetReader
                           + StorageSettingsCache
-                          + TryIntoHistoricalStateProvider
+                          + HistoryReader
                           + 'static,
         > + BlockReader<Header = N::BlockHeader>
         + StateProviderFactory
@@ -1676,8 +1693,14 @@ where
         + ChangeSetReader
         + Clone
         + 'static,
-    OverlayStateProviderFactory<P, N>: DatabaseProviderROFactory<Provider: TrieCursorFactory + HashedCursorFactory>
-        + Clone
+    OverlayStateProviderFactory<P, N>: DatabaseProviderROFactory<
+            Provider: TrieCursorFactory
+                          + HashedCursorFactory
+                          + HashedPostStateProvider
+                          + StateRootProvider
+                          + StateProvider
+                          + Send,
+        > + Clone
         + 'static,
     N: NodePrimitives,
     V: PayloadValidator<Types, Block = N::Block> + Clone,
@@ -1718,7 +1741,7 @@ where
 
     fn validate_block(
         &mut self,
-        block: SealedBlock<N::Block>,
+        block: SealedBlockWith<N::Block, Option<RawBal>>,
         ctx: TreeCtx<'_, N>,
     ) -> ValidationOutcome<N> {
         self.validate_block_with_state(BlockOrPayload::Block(block), ctx).map(

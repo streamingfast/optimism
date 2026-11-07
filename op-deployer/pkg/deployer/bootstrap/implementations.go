@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	mipsVersion "github.com/ethereum-optimism/optimism/cannon/mipsevm/versions"
-	"github.com/ethereum-optimism/optimism/op-core/devfeatures"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/artifacts"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/broadcaster"
@@ -35,27 +34,31 @@ import (
 )
 
 type ImplementationsConfig struct {
-	L1RPCUrl                        string             `cli:"l1-rpc-url"`
-	PrivateKey                      string             `cli:"private-key"`
-	ArtifactsLocator                *artifacts.Locator `cli:"artifacts-locator"`
-	MIPSVersion                     int                `cli:"mips-version"`
-	WithdrawalDelaySeconds          uint64             `cli:"withdrawal-delay-seconds"`
-	MinProposalSizeBytes            uint64             `cli:"min-proposal-size-bytes"`
-	ChallengePeriodSeconds          uint64             `cli:"challenge-period-seconds"`
-	ProofMaturityDelaySeconds       uint64             `cli:"proof-maturity-delay-seconds"`
-	DisputeGameFinalityDelaySeconds uint64             `cli:"dispute-game-finality-delay-seconds"`
-	DevFeatureBitmap                common.Hash        `cli:"dev-feature-bitmap"`
-	SP1Verifier                     common.Address     `cli:"sp1-verifier-address"`
-	FaultGameMaxGameDepth           uint64             `cli:"dispute-max-game-depth"`
-	FaultGameSplitDepth             uint64             `cli:"dispute-split-depth"`
-	FaultGameClockExtension         uint64             `cli:"dispute-clock-extension"`
-	FaultGameMaxClockDuration       uint64             `cli:"dispute-max-clock-duration"`
-	SuperchainConfigProxy           common.Address     `cli:"superchain-config-proxy"`
-	L1ProxyAdminOwner               common.Address     `cli:"l1-proxy-admin-owner"`
-	SuperchainProxyAdmin            common.Address     `cli:"superchain-proxy-admin"`
-	Challenger                      common.Address     `cli:"challenger"`
-	CacheDir                        string             `cli:"cache-dir"`
-	UseForge                        bool               `cli:"use-forge"`
+	L1RPCUrl                           string             `cli:"l1-rpc-url"`
+	PrivateKey                         string             `cli:"private-key"`
+	ArtifactsLocator                   *artifacts.Locator `cli:"artifacts-locator"`
+	MIPSVersion                        int                `cli:"mips-version"`
+	MinWithdrawalDelaySeconds          uint64             `cli:"min-withdrawal-delay-seconds"`
+	MaxWithdrawalDelaySeconds          uint64             `cli:"max-withdrawal-delay-seconds"`
+	MinProposalSizeBytes               uint64             `cli:"min-proposal-size-bytes"`
+	ChallengePeriodSeconds             uint64             `cli:"challenge-period-seconds"`
+	MinProofMaturityDelaySeconds       uint64             `cli:"min-proof-maturity-delay-seconds"`
+	MaxProofMaturityDelaySeconds       uint64             `cli:"max-proof-maturity-delay-seconds"`
+	MinDisputeGameFinalityDelaySeconds uint64             `cli:"min-dispute-game-finality-delay-seconds"`
+	MaxDisputeGameFinalityDelaySeconds uint64             `cli:"max-dispute-game-finality-delay-seconds"`
+	DevFeatureBitmap                   common.Hash        `cli:"dev-feature-bitmap"`
+	SP1Verifier                        common.Address     `cli:"sp1-verifier-address"`
+	FaultGameMaxGameDepth              uint64             `cli:"dispute-max-game-depth"`
+	FaultGameSplitDepth                uint64             `cli:"dispute-split-depth"`
+	FaultGameClockExtension            uint64             `cli:"dispute-clock-extension"`
+	FaultGameMaxClockDuration          uint64             `cli:"dispute-max-clock-duration"`
+	SuperchainConfigProxy              common.Address     `cli:"superchain-config-proxy"`
+	L1ProxyAdminOwner                  common.Address     `cli:"l1-proxy-admin-owner"`
+	SuperchainProxyAdmin               common.Address     `cli:"superchain-proxy-admin"`
+	Challenger                         common.Address     `cli:"challenger"`
+	CacheDir                           string             `cli:"cache-dir"`
+	UseForge                           bool               `cli:"use-forge"`
+	ForgeSlowBroadcast                 bool               `cli:"forge-slow-broadcast"`
 
 	Logger log.Logger
 
@@ -85,8 +88,11 @@ func (c *ImplementationsConfig) Check() error {
 	if !mipsVersion.IsSupported(c.MIPSVersion) {
 		return errors.New("MIPS version is not supported")
 	}
-	if c.WithdrawalDelaySeconds == 0 {
-		return errors.New("withdrawal delay in seconds must be specified")
+	if c.MinWithdrawalDelaySeconds == 0 {
+		return errors.New("minimum withdrawal delay in seconds must be specified")
+	}
+	if c.MinWithdrawalDelaySeconds > c.MaxWithdrawalDelaySeconds {
+		return errors.New("minimum withdrawal delay must not exceed the maximum")
 	}
 	if c.MinProposalSizeBytes == 0 {
 		return errors.New("preimage oracle minimum proposal size in bytes must be specified")
@@ -94,11 +100,17 @@ func (c *ImplementationsConfig) Check() error {
 	if c.ChallengePeriodSeconds == 0 {
 		return errors.New("preimage oracle challenge period in seconds must be specified")
 	}
-	if c.ProofMaturityDelaySeconds == 0 {
-		return errors.New("proof maturity delay in seconds must be specified")
+	if c.MinProofMaturityDelaySeconds == 0 {
+		return errors.New("minimum proof maturity delay in seconds must be specified")
 	}
-	if c.DisputeGameFinalityDelaySeconds == 0 {
-		return errors.New("dispute game finality delay in seconds must be specified")
+	if c.MinProofMaturityDelaySeconds > c.MaxProofMaturityDelaySeconds {
+		return errors.New("minimum proof maturity delay must not exceed the maximum")
+	}
+	if c.MinDisputeGameFinalityDelaySeconds == 0 {
+		return errors.New("minimum dispute game finality delay in seconds must be specified")
+	}
+	if c.MinDisputeGameFinalityDelaySeconds > c.MaxDisputeGameFinalityDelaySeconds {
+		return errors.New("minimum dispute game finality delay must not exceed the maximum")
 	}
 	if c.FaultGameMaxGameDepth == 0 {
 		return errors.New("fault game max game depth must be specified")
@@ -124,16 +136,11 @@ func (c *ImplementationsConfig) Check() error {
 	if c.Challenger == (common.Address{}) {
 		return errors.New("challenger must be specified")
 	}
-	zkEnabled := devfeatures.IsDevFeatureEnabled(c.DevFeatureBitmap, devfeatures.ZKDisputeGameFlag)
-	if !zkEnabled && c.SP1Verifier != (common.Address{}) {
-		return errors.New("sp1 verifier must not be specified when ZK dispute games are disabled")
-	}
 	return nil
 }
 
 func (c *ImplementationsConfig) resolveSP1Verifier(chainID *big.Int) error {
-	if !devfeatures.IsDevFeatureEnabled(c.DevFeatureBitmap, devfeatures.ZKDisputeGameFlag) ||
-		c.SP1Verifier != (common.Address{}) {
+	if c.SP1Verifier != (common.Address{}) {
 		return nil
 	}
 
@@ -238,8 +245,7 @@ func Implementations(ctx context.Context, cfg ImplementationsConfig) (opcm.Deplo
 	if err := cfg.Check(); err != nil {
 		return dio, fmt.Errorf("invalid config for Implementations: %w", err)
 	}
-	zkEnabled := devfeatures.IsDevFeatureEnabled(cfg.DevFeatureBitmap, devfeatures.ZKDisputeGameFlag)
-	if zkEnabled && cfg.SP1Verifier == (common.Address{}) {
+	if cfg.SP1Verifier == (common.Address{}) {
 		chainID, err := deployer.ChainIDFromRPC(ctx, cfg.L1RPCUrl)
 		if err != nil {
 			return dio, fmt.Errorf("failed to select default SP1 verifier: %w", err)
@@ -250,9 +256,7 @@ func Implementations(ctx context.Context, cfg ImplementationsConfig) (opcm.Deplo
 	}
 
 	lgr := cfg.Logger
-	if zkEnabled {
-		lgr.Info("using SP1 verifier", "address", cfg.SP1Verifier)
-	}
+	lgr.Info("using SP1 verifier", "address", cfg.SP1Verifier)
 
 	artifactsFS, err := artifacts.Download(ctx, cfg.ArtifactsLocator, ioutil.BarProgressor(), cfg.CacheDir)
 	if err != nil {
@@ -260,22 +264,25 @@ func Implementations(ctx context.Context, cfg ImplementationsConfig) (opcm.Deplo
 	}
 
 	input := opcm.DeployImplementationsInput{
-		WithdrawalDelaySeconds:          new(big.Int).SetUint64(cfg.WithdrawalDelaySeconds),
-		MinProposalSizeBytes:            new(big.Int).SetUint64(cfg.MinProposalSizeBytes),
-		ChallengePeriodSeconds:          new(big.Int).SetUint64(cfg.ChallengePeriodSeconds),
-		ProofMaturityDelaySeconds:       new(big.Int).SetUint64(cfg.ProofMaturityDelaySeconds),
-		DisputeGameFinalityDelaySeconds: new(big.Int).SetUint64(cfg.DisputeGameFinalityDelaySeconds),
-		MipsVersion:                     new(big.Int).SetUint64(uint64(cfg.MIPSVersion)),
-		DevFeatureBitmap:                cfg.DevFeatureBitmap,
-		FaultGameV2MaxGameDepth:         new(big.Int).SetUint64(cfg.FaultGameMaxGameDepth),
-		FaultGameV2SplitDepth:           new(big.Int).SetUint64(cfg.FaultGameSplitDepth),
-		FaultGameV2ClockExtension:       new(big.Int).SetUint64(cfg.FaultGameClockExtension),
-		FaultGameV2MaxClockDuration:     new(big.Int).SetUint64(cfg.FaultGameMaxClockDuration),
-		SuperchainConfigProxy:           cfg.SuperchainConfigProxy,
-		SuperchainProxyAdmin:            cfg.SuperchainProxyAdmin,
-		L1ProxyAdminOwner:               cfg.L1ProxyAdminOwner,
-		Challenger:                      cfg.Challenger,
-		SP1Verifier:                     cfg.SP1Verifier,
+		MinWithdrawalDelaySeconds:          new(big.Int).SetUint64(cfg.MinWithdrawalDelaySeconds),
+		MaxWithdrawalDelaySeconds:          new(big.Int).SetUint64(cfg.MaxWithdrawalDelaySeconds),
+		MinProposalSizeBytes:               new(big.Int).SetUint64(cfg.MinProposalSizeBytes),
+		ChallengePeriodSeconds:             new(big.Int).SetUint64(cfg.ChallengePeriodSeconds),
+		MinProofMaturityDelaySeconds:       new(big.Int).SetUint64(cfg.MinProofMaturityDelaySeconds),
+		MaxProofMaturityDelaySeconds:       new(big.Int).SetUint64(cfg.MaxProofMaturityDelaySeconds),
+		MinDisputeGameFinalityDelaySeconds: new(big.Int).SetUint64(cfg.MinDisputeGameFinalityDelaySeconds),
+		MaxDisputeGameFinalityDelaySeconds: new(big.Int).SetUint64(cfg.MaxDisputeGameFinalityDelaySeconds),
+		MipsVersion:                        new(big.Int).SetUint64(uint64(cfg.MIPSVersion)),
+		DevFeatureBitmap:                   cfg.DevFeatureBitmap,
+		FaultGameV2MaxGameDepth:            new(big.Int).SetUint64(cfg.FaultGameMaxGameDepth),
+		FaultGameV2SplitDepth:              new(big.Int).SetUint64(cfg.FaultGameSplitDepth),
+		FaultGameV2ClockExtension:          new(big.Int).SetUint64(cfg.FaultGameClockExtension),
+		FaultGameV2MaxClockDuration:        new(big.Int).SetUint64(cfg.FaultGameMaxClockDuration),
+		SuperchainConfigProxy:              cfg.SuperchainConfigProxy,
+		SuperchainProxyAdmin:               cfg.SuperchainProxyAdmin,
+		L1ProxyAdminOwner:                  cfg.L1ProxyAdminOwner,
+		Challenger:                         cfg.Challenger,
+		SP1Verifier:                        cfg.SP1Verifier,
 	}
 
 	if cfg.UseForge {
@@ -284,6 +291,7 @@ func Implementations(ctx context.Context, cfg ImplementationsConfig) (opcm.Deplo
 		if err != nil {
 			return dio, fmt.Errorf("failed to create forge client: %w", err)
 		}
+		forgeClient.SlowBroadcast = cfg.ForgeSlowBroadcast
 
 		forgeEnv := &opcm.ForgeEnv{
 			Client:     forgeClient,

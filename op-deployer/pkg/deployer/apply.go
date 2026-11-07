@@ -40,6 +40,8 @@ type ApplyConfig struct {
 	CacheDir         string
 	privateKeyECDSA  *ecdsa.PrivateKey
 	UseForge         bool
+	// ForgeSlowBroadcast confirms each Forge broadcast transaction before sending the next.
+	ForgeSlowBroadcast bool
 }
 
 func (a *ApplyConfig) Check() error {
@@ -96,13 +98,14 @@ func ApplyCLI() func(cliCtx *cli.Context) error {
 		ctx := ctxinterrupt.WithCancelOnInterrupt(cliCtx.Context)
 
 		if err := Apply(ctx, ApplyConfig{
-			L1RPCUrl:         l1RPCUrl,
-			Workdir:          workdir,
-			PrivateKey:       privateKey,
-			DeploymentTarget: depTarget,
-			Logger:           l,
-			CacheDir:         cacheDir,
-			UseForge:         cliCtx.Bool(UseForgeFlagName),
+			L1RPCUrl:           l1RPCUrl,
+			Workdir:            workdir,
+			PrivateKey:         privateKey,
+			DeploymentTarget:   depTarget,
+			Logger:             l,
+			CacheDir:           cacheDir,
+			UseForge:           cliCtx.Bool(UseForgeFlagName),
+			ForgeSlowBroadcast: cliCtx.Bool(ForgeSlowBroadcastFlagName),
 		}); err != nil {
 			return err
 		}
@@ -176,6 +179,7 @@ func Apply(ctx context.Context, cfg ApplyConfig) error {
 		StateWriter:        pipeline.WorkdirStateWriter(cfg.Workdir),
 		CacheDir:           cfg.CacheDir,
 		UseForge:           cfg.UseForge,
+		ForgeSlowBroadcast: cfg.ForgeSlowBroadcast,
 		PrivateKey:         cfg.PrivateKey,
 		Workdir:            cfg.Workdir,
 	}); err != nil {
@@ -200,6 +204,7 @@ type ApplyPipelineOpts struct {
 	StateWriter        pipeline.StateWriter
 	CacheDir           string
 	UseForge           bool
+	ForgeSlowBroadcast bool
 	// DeployMockSP1Verifier is a test-only opt-in for development environments.
 	DeployMockSP1Verifier bool
 	// AllowUnoptimizedContracts is a test-only opt-in that lets oversized dev-profile
@@ -271,20 +276,6 @@ func ApplyPipeline(
 		if err != nil {
 			return fmt.Errorf("failed to initialize L1 host: %w", err)
 		}
-	case DeploymentTargetCalldata, DeploymentTargetNoop:
-		l1RPC, err = rpc.Dial(opts.L1RPCUrl)
-		if err != nil {
-			return fmt.Errorf("failed to connect to L1 RPC: %w", err)
-		}
-
-		l1Client = ethclient.NewClient(l1RPC)
-
-		bcaster = new(broadcaster.CalldataBroadcaster)
-
-		l1Host, err = env.DefaultForkedScriptHost(ctx, bcaster, opts.Logger, deployer, bundle.L1, l1RPC)
-		if err != nil {
-			return fmt.Errorf("failed to initialize L1 host: %w", err)
-		}
 	case DeploymentTargetGenesis:
 		bcaster = broadcaster.NoopBroadcaster()
 		l1Host, err = env.DefaultScriptHost(
@@ -319,6 +310,7 @@ func ApplyPipeline(
 		if err != nil {
 			return fmt.Errorf("failed to create Forge client: %w", err)
 		}
+		forgeClient.SlowBroadcast = opts.ForgeSlowBroadcast
 	}
 
 	pEnv := &pipeline.Env{
@@ -454,14 +446,6 @@ func ApplyPipeline(
 		}
 		if err := pEnv.StateWriter.WriteState(st); err != nil {
 			return fmt.Errorf("failed to write state: %w", err)
-		}
-	}
-
-	if opts.DeploymentTarget == DeploymentTargetCalldata {
-		cdCaster := pEnv.Broadcaster.(*broadcaster.CalldataBroadcaster)
-		st.DeploymentCalldata, err = cdCaster.Dump()
-		if err != nil {
-			return fmt.Errorf("failed to dump calldata: %w", err)
 		}
 	}
 

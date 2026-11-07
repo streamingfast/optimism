@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/env"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/jsonutil"
 
 	"github.com/ethereum-optimism/optimism/op-chain-ops/foundry"
@@ -34,6 +35,13 @@ type l2GenesisOverrides struct {
 	OperatorFeeVaultWithdrawalNetwork        genesis.WithdrawalNetwork `json:"operatorFeeVaultWithdrawalNetwork"`
 	EnableGovernance                         bool                      `json:"enableGovernance"`
 	GovernanceTokenOwner                     common.Address            `json:"governanceTokenOwner"`
+	// L2ToL2MessageExpiryPeriod overrides the L2ToL2CrossDomainMessenger's expiry period, in
+	// seconds. Zero keeps the production period. Test networks only; upgrades keep the period.
+	L2ToL2MessageExpiryPeriod uint64 `json:"l2ToL2MessageExpiryPeriod"`
+	// SettlementChainID is the chain's OP Private settlement chain ID, written into the
+	// ChainConfig predeploy: 0 on a public chain, the chain's own ID on a settlement chain, and
+	// its settlement chain's ID on a private chain. It needs the OP_PRIVATE dev feature.
+	SettlementChainID uint64 `json:"settlementChainId"`
 }
 
 type cgtConfig struct {
@@ -91,9 +99,12 @@ func GenerateL2Genesis(pEnv *Env, intent *state.Intent, bundle artifacts.Bundle,
 
 	cgt := buildCGTConfig(thisIntent)
 
-	devFeatureBitmap, err := buildDevFeatureBitmap(intent)
+	if err := checkL2ToL2MessageExpiryPeriodOverride(intent.ConfigType, intent.L1ChainID, overrides.L2ToL2MessageExpiryPeriod); err != nil {
+		return err
+	}
 
-	if err != nil {
+	devFeatureBitmap := devFeatureBitmapOverride(intent)
+	if err := checkSettlementChainIDOverride(devFeatureBitmap, overrides.SettlementChainID); err != nil {
 		return err
 	}
 
@@ -128,6 +139,8 @@ func GenerateL2Genesis(pEnv *Env, intent *state.Intent, bundle artifacts.Bundle,
 		LiquidityControllerOwner:   cgt.LiquidityControllerOwner,
 		DevFeatureBitmap:           devFeatureBitmap,
 		UseInterop:                 intent.UseInterop,
+		L2ToL2MessageExpiryPeriod:  new(big.Int).SetUint64(overrides.L2ToL2MessageExpiryPeriod),
+		SettlementChainID:          new(big.Int).SetUint64(overrides.SettlementChainID),
 	}); err != nil {
 		return fmt.Errorf("failed to call L2Genesis script: %w", err)
 	}
@@ -217,24 +230,15 @@ func wdNetworkToBig(wd genesis.WithdrawalNetwork) *big.Int {
 	return big.NewInt(int64(n))
 }
 
-// buildDevFeatureBitmap reads the devFeatureBitmap from global overrides and returns an error if the interop feature
-// bit does not match the UseInterop intent flag. This ensures that interop feature is explicitly enabled by both the intent and the boolean flag.
-func buildDevFeatureBitmap(intent *state.Intent) (common.Hash, error) {
-	var devFeatureBitmap common.Hash
+// devFeatureBitmapOverride returns the devFeatureBitmap from the global overrides, or zero when it is not set.
+func devFeatureBitmapOverride(intent *state.Intent) common.Hash {
 	switch v := intent.GlobalDeployOverrides["devFeatureBitmap"].(type) {
 	case common.Hash:
-		devFeatureBitmap = v
+		return v
 	case string:
-		devFeatureBitmap = common.HexToHash(v)
+		return common.HexToHash(v)
 	}
-
-	interopBitEnabled := devfeatures.IsDevFeatureEnabled(devFeatureBitmap, devfeatures.OptimismPortalInteropFlag)
-
-	if intent.UseInterop != interopBitEnabled {
-		return common.Hash{}, fmt.Errorf("interop feature in devFeatureBitmap does not match the UseInterop intent flag")
-	}
-
-	return devFeatureBitmap, nil
+	return common.Hash{}
 }
 
 func defaultOverrides() l2GenesisOverrides {
@@ -251,4 +255,28 @@ func defaultOverrides() l2GenesisOverrides {
 		EnableGovernance:                         false,
 		GovernanceTokenOwner:                     standard.GovernanceTokenOwner,
 	}
+}
+
+// checkSettlementChainIDOverride refuses a settlement chain ID without the OP_PRIVATE dev
+// feature, which genesis would otherwise ignore.
+func checkSettlementChainIDOverride(devFeatureBitmap common.Hash, settlementChainID uint64) error {
+	if settlementChainID != 0 && !devfeatures.IsDevFeatureEnabled(devFeatureBitmap, devfeatures.OPPrivateFlag) {
+		return fmt.Errorf("settlementChainId override %d needs the OP_PRIVATE dev feature", settlementChainID)
+	}
+	return nil
+}
+
+// checkL2ToL2MessageExpiryPeriodOverride refuses an expiry period override for standard intents
+// and on public L1s.
+func checkL2ToL2MessageExpiryPeriodOverride(configType state.IntentType, l1ChainID uint64, period uint64) error {
+	if period == 0 {
+		return nil
+	}
+	if configType == state.IntentTypeStandard || configType == state.IntentTypeStandardOverrides {
+		return fmt.Errorf("l2ToL2MessageExpiryPeriod override %ds is for test networks only, not for %s intents", period, configType)
+	}
+	if eth.L1ChainConfigByChainID(eth.ChainIDFromUInt64(l1ChainID)) != nil {
+		return fmt.Errorf("l2ToL2MessageExpiryPeriod override %ds is for test networks only, not for chains on public L1 %d", period, l1ChainID)
+	}
+	return nil
 }

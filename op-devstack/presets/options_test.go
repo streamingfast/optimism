@@ -110,6 +110,18 @@ func TestUnsupportedPresetOptionKinds(t *testing.T) {
 			want:      0,
 		},
 		{
+			name:      "minimal rejects alt-DA",
+			supported: minimalPresetSupportedOptionKinds,
+			opts:      WithAltDA(nil),
+			want:      optionKindAltDA,
+		},
+		{
+			name:      "minimal without fault proofs allows alt-DA",
+			supported: minimalNoFaultProofsPresetSupportedOptionKinds,
+			opts:      WithAltDA(nil),
+			want:      0,
+		},
+		{
 			name:      "conductors allow op-reth options",
 			supported: minimalWithConductorsPresetSupportedOptionKinds,
 			opts:      WithOpRethOption(sysgo.OpRethWithBinary("op-reth-superset")),
@@ -160,13 +172,13 @@ func TestUnsupportedPresetOptionKinds(t *testing.T) {
 		{
 			name:      "single chain supernode proofs reject op-reth options",
 			supported: supernodeProofsPresetSupportedOptionKinds,
-			opts:      WithOpRethOption(sysgo.OpRethWithBinary("op-reth-sdm-fixture")),
+			opts:      WithOpRethOption(sysgo.OpRethWithExtraArgs("--testing.sdm-fixed-policy")),
 			want:      optionKindOpReth,
 		},
 		{
 			name:      "single chain no-supernode proofs accept op-reth options",
 			supported: singleChainInteropNoSupernodePresetSupportedOptionKinds,
-			opts:      WithOpRethOption(sysgo.OpRethWithBinary("op-reth-sdm-fixture")),
+			opts:      WithOpRethOption(sysgo.OpRethWithExtraArgs("--testing.sdm-fixed-policy")),
 			want:      0,
 		},
 		{

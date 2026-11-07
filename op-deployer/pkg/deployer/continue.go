@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/ethereum-optimism/optimism/op-chain-ops/addresses"
-	"github.com/ethereum-optimism/optimism/op-chain-ops/script"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/artifacts"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/broadcaster"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/opcm"
@@ -100,6 +99,7 @@ type continuationRunner struct {
 	l1Client   *ethclient.Client
 	deployer   common.Address
 	pinnedOPCM common.Address
+	opcmImpls  *addresses.ImplementationsContracts
 	artifacts  artifacts.Bundle
 
 	expectedNonce uint64
@@ -113,7 +113,7 @@ type continuationChain struct {
 	expected state.ChainState
 	dci      opcm.DeployOPChainInput
 	result   pipeline.OPChainDeploymentResult
-	captured []script.Broadcast
+	captured []broadcaster.Broadcast
 }
 
 func (r *continuationRunner) run() error {
@@ -177,6 +177,13 @@ func (r *continuationRunner) run() error {
 	r.pinnedOPCM = pinnedOPCM
 	if err := st.CheckL1PredictInputs(deployer, pinnedOPCM); err != nil {
 		return err
+	}
+	r.opcmImpls, err = opcm.ReadImplementations(r.ctx, l1Client, pinnedOPCM)
+	if err != nil {
+		return fmt.Errorf("failed to read implementations from OPCM at %s: %w", pinnedOPCM, err)
+	}
+	if st.ImplementationsDeployment == nil || *st.ImplementationsDeployment != *r.opcmImpls {
+		return fmt.Errorf("the implementations recorded by prepare do not match those of OPCM %s", pinnedOPCM)
 	}
 	startNonce, err := readContinuationStartNonce(r.ctx, l1Client, deployer)
 	if err != nil {
@@ -252,12 +259,13 @@ func (r *continuationRunner) classifyChains() ([]continuationChain, error) {
 		if err := revalidateContinuationAnchor(r.ctx, r.l1RPC, chainID, &expected); err != nil {
 			return nil, err
 		}
-		if uint64(*expected.GenesisTime) <= latest.Time {
+		if elapsed, warn := genesisElapsedSeconds(uint64(*expected.GenesisTime), latest.Time); warn {
 			r.cfg.Logger.Warn(
 				"committed genesis time has elapsed",
 				"chainID", chainID.Hex(),
 				"genesisTime", uint64(*expected.GenesisTime),
 				"l1HeadTime", latest.Time,
+				"elapsedSeconds", elapsed,
 			)
 		}
 
@@ -360,21 +368,7 @@ func (r *continuationRunner) reconcileLiveChain(
 	); err != nil {
 		return fmt.Errorf("already-live deployment validation failed for chain %s: %w", chainID.Hex(), err)
 	}
-	if err := r.initPreflightEnv(); err != nil {
-		return err
-	}
-	result, err := pipeline.ReconcileOPChainDeployment(
-		r.preflightEnv,
-		chainID,
-		expected.OpChainContracts,
-		r.pinnedOPCM,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to normalize already-live deployment for chain %s: %w", chainID.Hex(), err)
-	}
-	if captured := r.capture.Drain(); len(captured) != 0 {
-		return fmt.Errorf("implementation readback unexpectedly captured %d broadcasts for chain %s", len(captured), chainID.Hex())
-	}
+	result := pipeline.ReconcileOPChainDeployment(chainID, expected.OpChainContracts, r.opcmImpls)
 	if err := pipeline.RecordOPChainDeployment(r.state, result); err != nil {
 		return fmt.Errorf("failed to record reconciled deployment for chain %s: %w", chainID.Hex(), err)
 	}
@@ -392,7 +386,7 @@ func (r *continuationRunner) preflight(chain *continuationChain) error {
 	if err := r.initPreflightEnv(); err != nil {
 		return err
 	}
-	result, err := pipeline.ExecuteOPChainDeployment(r.preflightEnv, r.state, chain.id, chain.dci)
+	result, err := pipeline.ExecuteOPChainDeployment(r.preflightEnv, r.state, chain.id, chain.dci, r.opcmImpls)
 	if err != nil {
 		return fmt.Errorf("continuation preflight failed for chain %s: %w", chain.id.Hex(), err)
 	}
@@ -676,7 +670,7 @@ func revalidateContinuationAnchor(
 }
 
 func validateContinuationBroadcast(
-	broadcasts []script.Broadcast,
+	broadcasts []broadcaster.Broadcast,
 	deployer common.Address,
 	pinnedOPCM common.Address,
 ) error {
@@ -684,8 +678,8 @@ func validateContinuationBroadcast(
 		return fmt.Errorf("expected exactly one deployment call, got %d broadcasts", len(broadcasts))
 	}
 	bcast := broadcasts[0]
-	if bcast.Type != script.BroadcastCall {
-		return fmt.Errorf("expected deployment broadcast type %s, got %s", script.BroadcastCall, bcast.Type)
+	if bcast.Type != broadcaster.BroadcastCall {
+		return fmt.Errorf("expected deployment broadcast type %s, got %s", broadcaster.BroadcastCall, bcast.Type)
 	}
 	if bcast.To != pinnedOPCM {
 		return fmt.Errorf("deployment broadcast target mismatch: expected %s, got %s", pinnedOPCM, bcast.To)
