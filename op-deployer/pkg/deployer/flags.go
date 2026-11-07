@@ -5,7 +5,6 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/artifacts"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/flags"
-	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/standard"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/state"
 
 	op_service "github.com/ethereum-optimism/optimism/op-service"
@@ -14,25 +13,26 @@ import (
 )
 
 const (
-	EnvVarPrefix              = flags.EnvVarPrefix
-	L1RPCURLFlagName          = flags.L1RPCURLFlagName
-	CacheDirFlagName          = flags.CacheDirFlagName
-	L1ChainIDFlagName         = flags.L1ChainIDFlagName
-	ArtifactsLocatorFlagName  = flags.ArtifactsLocatorFlagName
-	L2ChainIDsFlagName        = flags.L2ChainIDsFlagName
-	WorkdirFlagName           = flags.WorkdirFlagName
-	OutdirFlagName            = flags.OutdirFlagName
-	PrivateKeyFlagName        = flags.PrivateKeyFlagName
-	PrestateFlagName          = flags.PrestateFlagName
-	IntentTypeFlagName        = flags.IntentTypeFlagName
-	VerifierAPIKeyFlagName    = flags.VerifierAPIKeyFlagName
-	EtherscanAPIKeyFlagName   = flags.EtherscanAPIKeyFlagName // Deprecated: use VerifierAPIKeyFlagName
-	InputFileFlagName         = flags.InputFileFlagName
-	ContractNameFlagName      = flags.ContractNameFlagName
-	VerifierTypeFlagName      = flags.VerifierTypeFlagName
-	VerifierUrlFlagName       = flags.VerifierUrlFlagName
-	UseForgeFlagName          = flags.UseForgeFlagName
-	GenesisTimeOffsetFlagName = flags.GenesisTimeOffsetFlagName
+	EnvVarPrefix               = flags.EnvVarPrefix
+	L1RPCURLFlagName           = flags.L1RPCURLFlagName
+	CacheDirFlagName           = flags.CacheDirFlagName
+	L1ChainIDFlagName          = flags.L1ChainIDFlagName
+	ArtifactsLocatorFlagName   = flags.ArtifactsLocatorFlagName
+	L2ChainIDsFlagName         = flags.L2ChainIDsFlagName
+	WorkdirFlagName            = flags.WorkdirFlagName
+	OutdirFlagName             = flags.OutdirFlagName
+	PrivateKeyFlagName         = flags.PrivateKeyFlagName
+	PrestateFlagName           = flags.PrestateFlagName
+	IntentTypeFlagName         = flags.IntentTypeFlagName
+	VerifierAPIKeyFlagName     = flags.VerifierAPIKeyFlagName
+	EtherscanAPIKeyFlagName    = flags.EtherscanAPIKeyFlagName // Deprecated: use VerifierAPIKeyFlagName
+	InputFileFlagName          = flags.InputFileFlagName
+	ContractNameFlagName       = flags.ContractNameFlagName
+	VerifierTypeFlagName       = flags.VerifierTypeFlagName
+	VerifierUrlFlagName        = flags.VerifierUrlFlagName
+	UseForgeFlagName           = flags.UseForgeFlagName
+	ForgeSlowBroadcastFlagName = flags.ForgeSlowBroadcastFlagName
+	GenesisTimeOffsetFlagName  = flags.GenesisTimeOffsetFlagName
 )
 
 var (
@@ -89,7 +89,7 @@ var (
 	}
 	DeploymentTargetFlag = &cli.StringFlag{
 		Name:    "deployment-target",
-		Usage:   fmt.Sprintf("Where to deploy L1 contracts. Options: %s, %s, %s, %s", DeploymentTargetLive, DeploymentTargetGenesis, DeploymentTargetCalldata, DeploymentTargetNoop),
+		Usage:   fmt.Sprintf("Where to deploy L1 contracts. Options: %s, %s", DeploymentTargetLive, DeploymentTargetGenesis),
 		EnvVars: PrefixEnvVar("DEPLOYMENT_TARGET"),
 		Value:   string(DeploymentTargetLive),
 	}
@@ -144,14 +144,18 @@ var (
 		EnvVars: PrefixEnvVar("USE_FORGE"),
 		Value:   false,
 	}
+	ForgeSlowBroadcastFlag = &cli.BoolFlag{
+		Name:    ForgeSlowBroadcastFlagName,
+		Usage:   "with --use-forge, wait for each broadcast transaction to confirm before sending the next",
+		EnvVars: PrefixEnvVar("FORGE_SLOW_BROADCAST"),
+		Value:   false,
+	}
 	GenesisTimeOffsetFlag = &cli.Uint64Flag{
 		Name: GenesisTimeOffsetFlagName,
 		Usage: "Offset in seconds added to the L1 anchor block's timestamp to produce the committed L2 genesis " +
-			"timestamp. Must cover the runtime of the off-chain pipeline between anchor selection and OPCM.deploy " +
-			"landing on L1, including the prestate build. " +
-			fmt.Sprintf("Must be at least %d seconds.", standard.MinGenesisTimeOffsetSeconds),
+			"timestamp. A zero offset starts genesis at the anchor timestamp; nodes produce catch-up blocks for " +
+			"elapsed block times. Use a larger offset to schedule genesis after deployment.",
 		EnvVars: PrefixEnvVar("GENESIS_TIME_OFFSET"),
-		Value:   standard.DefaultGenesisTimeOffsetSeconds,
 	}
 )
 
@@ -187,6 +191,7 @@ var ApplyFlags = []cli.Flag{
 	VerifierFlag,
 	VerifierUrlFlag,
 	UseForgeFlag,
+	ForgeSlowBroadcastFlag,
 }
 
 var PrestateFlags = []cli.Flag{

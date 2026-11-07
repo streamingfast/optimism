@@ -70,8 +70,8 @@ func TestSDMOptInIsInertOnStockOpReth(gt *testing.T) {
 
 func TestSDMFixturePayloadReceiptAndAccounting(gt *testing.T) {
 	t := devtest.SerialT(gt)
-	sys := newFixtureSDMRethSystem(t)
-	sdmtest.VerifySDMFixture(t, sys.L2EL)
+	sys := newFixedPolicySDMRethSystem(t)
+	sdmtest.VerifyOpReth(t, sys.L2EL)
 	sdmtest.VerifyOpReth(t, sys.L2ELVerifier)
 
 	block, included, targetBlockNum := sdmtest.MustFindRepeatedSlotBlock(t, sys, 2, 3)
@@ -96,8 +96,8 @@ func TestSDMFixturePayloadReceiptAndAccounting(gt *testing.T) {
 
 func TestSDMFixtureOperatorOptInControlsProduction(gt *testing.T) {
 	t := devtest.SerialT(gt)
-	sys := newFixtureSDMRethSystem(t)
-	sdmtest.VerifySDMFixture(t, sys.L2EL)
+	sys := newFixedPolicySDMRethSystem(t)
+	sdmtest.VerifyOpReth(t, sys.L2EL)
 
 	sdmtest.SetSDMEnabled(t, sys.L2EL, false)
 	offBlock, offReceipt := submitFixtureProbe(t, sys)
@@ -124,15 +124,14 @@ func TestSDMFixtureOperatorOptInControlsProduction(gt *testing.T) {
 // invalid refund, include the transaction, and keep building verifier-accepted blocks.
 func TestSDMFixtureExcessiveRefundDoesNotHaltSequencer(gt *testing.T) {
 	const excessiveRefundTarget = "0x000000000000000000000000000000000000f00d"
-	gt.Setenv("OP_RETH_SDM_FIXTURE_EXCESSIVE_REFUND_TARGET", excessiveRefundTarget)
 
 	t := devtest.SerialT(gt)
-	sys := newFixtureSDMRethSystem(t)
-	sdmtest.VerifySDMFixture(t, sys.L2EL)
+	sys := newExcessiveRefundSDMRethSystem(t, excessiveRefundTarget)
+	sdmtest.VerifyOpReth(t, sys.L2EL)
 	sdmtest.VerifyOpReth(t, sys.L2ELVerifier)
 
-	// Fund through an ordinary one-gas-refund transaction before sending the targeted fault. This
-	// proves the fixture and sequencer are healthy before the faulty policy output is exercised.
+	// Fund through an ordinary transaction before sending the targeted fault. This proves the
+	// sequencer is healthy before the faulty policy output is exercised.
 	alice := sys.FunderL2.NewFundedEOA(eth.OneEther)
 	faulty := txplan.NewPlannedTx(
 		alice.Plan(),
@@ -186,12 +185,16 @@ func TestSDMFixtureExcessiveRefundDoesNotHaltSequencer(gt *testing.T) {
 		"stock verifier must accept the block with the invalid refund zeroed")
 }
 
+// submitFixtureProbe sends one StateBloat call and returns its block. A plain transfer would not do:
+// it spends exactly its EIP-7623 floor, so the producer clips any refund on it to its zero net
+// saving and the fixture's one-gas refund never appears.
 func submitFixtureProbe(t devtest.T, sys *sdmtest.RethSystem) (*sdmpkg.RPCBlock, *types.Receipt) {
 	alice := sys.FunderL2.NewFundedEOA(eth.OneEther)
+	stateBloatAddr := sdmtest.DeployContract(t, alice, sdmpkg.StateBloatBin)
 	probe := txplan.NewPlannedTx(
 		alice.Plan(),
-		txplan.WithTo(sdmtest.AddrPtr(common.HexToAddress("0x000000000000000000000000000000000000dEaD"))),
-		txplan.WithValue(eth.OneHundredthEther),
+		txplan.WithTo(sdmtest.AddrPtr(stateBloatAddr)),
+		txplan.WithData(sdmpkg.EncodeRun(1)),
 	)
 	receipt, err := probe.Included.Eval(t.Ctx())
 	t.Require().NoError(err, "fixture probe transaction must be included")
@@ -222,12 +225,12 @@ func TestSDMPostExecBlockDerivesAndChainProgresses(gt *testing.T) {
 func testSDMPostExecBlockDerivesAndChainProgresses(t devtest.T, batchType string, singular bool) {
 	var sys *sdmtest.RethSystem
 	if singular {
-		sys = newFixtureSDMRethSystem(t, withSingularBatcher)
+		sys = newFixedPolicySDMRethSystem(t, withSingularBatcher)
 	} else {
 		// Use the default SpanBatch path to verify post-exec txs derive after batching.
-		sys = newFixtureSDMRethSystem(t)
+		sys = newFixedPolicySDMRethSystem(t)
 	}
-	sdmtest.VerifySDMFixture(t, sys.L2EL)
+	sdmtest.VerifyOpReth(t, sys.L2EL)
 	sdmtest.VerifyOpReth(t, sys.L2ELVerifier)
 
 	block, included, targetBlockNum := sdmtest.MustFindRepeatedSlotBlock(t, sys, 2, 3)
@@ -357,7 +360,7 @@ func testSDMPostExecBlockDerivesAndChainProgresses(t devtest.T, batchType string
 func TestSDMPostExecBlockDerivesOnIsolatedVerifier(gt *testing.T) {
 	t := devtest.ParallelT(gt)
 	sys := newSDMRethSystemWithIsolatedVerifier(t)
-	sdmtest.VerifySDMFixture(t, sys.L2EL)
+	sdmtest.VerifyOpReth(t, sys.L2EL)
 	sdmtest.VerifyOpReth(t, sys.L2ELVerifier)
 
 	// Produce a PostExec block on the sequencer, plus a sentinel after it so derivation must carry

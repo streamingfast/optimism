@@ -9,6 +9,28 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## world-chain-v2.8.1-fh3.1
+
+Moves the world-chain line to upstream `op-reth/v2.8.1` (`72207294`), the optimism rev world-chain
+`v2.8.1` pins. Outside the reth pin and this changelog, the tree is the same as
+`op-reth-v2.8.1-fh3.1`.
+
+### Changed
+
+* Merged `release/op-reth-2.x` at `op-reth-v2.8.1-fh3.1`, which merges upstream `op-reth/v2.8.1`
+  and moves reth to ethereum-optimism/reth `op-v2.6.0-2` (reth v2.6.0), revm to 43 and alloy-evm
+  to 0.39. The fee vault formulas, deposit handling and fork schedule the Firehose hooks depend on
+  are unchanged.
+* Reth now comes from `streamingfast/reth` `world-chain-v2.8.1-fh3.1`, which merges `op-v2.6.0-2`
+  into `release/world-chain-2.x`.
+* `alloy-evm` now comes from `streamingfast/evm` tag `v0.39.0-sf`, so block traces keep their
+  `systemCalls`.
+* The Firehose engine validator follows upstream's payload validator: a block whose transaction
+  sender cannot be recovered is now rejected as an invalid block instead of failing with an
+  internal error.
+* Add `ACTIVATIONS.md`, which lists every OP hardfork with its status on OP Mainnet and Unichain
+  and its effect on the Firehose block.
+
 ## world-chain-v2.6.0-fh3.1
 
 Moves the world-chain line to upstream `op-reth/v2.6.0` (`da6d3252`), the optimism rev world-chain

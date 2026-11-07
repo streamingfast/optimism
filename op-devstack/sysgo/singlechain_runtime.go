@@ -14,7 +14,7 @@ import (
 	opchallenger "github.com/ethereum-optimism/optimism/op-challenger"
 	gameTypes "github.com/ethereum-optimism/optimism/op-challenger/game/types"
 	challengermetrics "github.com/ethereum-optimism/optimism/op-challenger/metrics"
-	"github.com/ethereum-optimism/optimism/op-core/devfeatures"
+	opgenesis "github.com/ethereum-optimism/optimism/op-core/genesis"
 	"github.com/ethereum-optimism/optimism/op-core/interop/depset"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	sharedchallenger "github.com/ethereum-optimism/optimism/op-devstack/shared/challenger"
@@ -30,7 +30,6 @@ import (
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum-optimism/optimism/op-service/oppprof"
 	oprpc "github.com/ethereum-optimism/optimism/op-service/rpc"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -68,7 +67,7 @@ func newDefaultSingleChainWorld(t devtest.T, keys devkeys.Keys, cfg PresetConfig
 	deployerOpts := cfg.DeployerOptions
 	if cfg.InteropAtGenesis {
 		deployerOpts = append([]DeployerOption{
-			WithDevFeatureEnabled(devfeatures.OptimismPortalInteropFlag),
+			WithUseInterop(),
 		}, deployerOpts...)
 	}
 	migration, l1Net, l2Net, depSet, fullCfgSet := buildSingleChainWorld(t, keys, cfg.InteropAtGenesis, cfg.LocalContractArtifactsPath, genesisAnchorGameType(cfg), startL1, deployerOpts...)
@@ -110,7 +109,6 @@ func startDefaultSingleChainPrimary(
 			Key:           "sequencer",
 			IsSequencer:   true,
 			NoDiscovery:   true,
-			EnableReqResp: true,
 			DependencySet: world.Interop.DependencySet,
 			L2CLOptions:   l2CLOptions,
 		})
@@ -123,7 +121,7 @@ func startDefaultSingleChainPrimary(
 	}
 }
 
-// startStoppedSingleChainPrimary builds an op-node sequencer that is inactive
+// startStoppedSingleChainPrimary builds a sequencer CL that is inactive
 // from its first start. Conductor presets use this to ensure no node can create
 // an independent unsafe fork before the Raft cluster and p2p mesh are ready.
 func startStoppedSingleChainPrimary(
@@ -145,14 +143,10 @@ func startStoppedSingleChainPrimary(
 	// Env-resolved options come first so an explicit binary from the test overrides the env one.
 	sequencerELOpts := append(append([]OpRethOption{}, ResolveMixedL2ELOpts(t)...), cfg.OpRethOptions...)
 	l2EL := startSequencerEL(t, world.L2Network, jwtPath, jwtSecret, NewELNodeIdentity(0), sequencerELOpts...)
-	l2CL := startL2CLNode(t, keys, world.L1Network, world.L2Network, l1EL, l1CL, l2EL, jwtSecret, l2CLNodeStartConfig{
-		Key:              "sequencer",
-		IsSequencer:      true,
-		NoDiscovery:      true,
-		EnableReqResp:    true,
-		L2CLOptions:      l2CLOptions,
-		SequencerStopped: true,
-	})
+	l2CL := startStoppedSequencerCL(
+		t, keys, world.L1Network, world.L2Network, l1EL, l1CL, l2EL, jwtSecret,
+		"sequencer", l2CLOptions,
+	)
 	return singleChainPrimaryRuntime{EL: l2EL, CL: l2CL}
 }
 
@@ -163,6 +157,10 @@ func newSingleChainRuntimeWithConfig(t devtest.T, cfg PresetConfig, spec singleC
 	require.NoError(err, "failed to derive dev keys from mnemonic")
 
 	jwtPath, jwtSecret := writeJWTSecret(t)
+
+	if cfg.AltDAStore != nil {
+		cfg = withAltDA(t, cfg)
+	}
 
 	l1Clock := clock.SystemClock
 	var timeTravelClock *clock.AdvancingClock
@@ -442,7 +440,7 @@ func startMinimalChallenger(
 	logger.Info("Challenger key acquired", "addr", crypto.PubkeyToAddress(challengerSecret.PublicKey))
 
 	rollupCfgs := []*rollup.Config{l2Net.rollupCfg}
-	l2Geneses := []*core.Genesis{l2Net.genesis}
+	l2Geneses := []*opgenesis.Genesis{l2Net.genesis}
 	dependencySet, err := depset.NewStaticConfigDependencySet(map[eth.ChainID]*depset.StaticConfigDependency{
 		l2Net.ChainID(): {},
 	})
@@ -466,7 +464,7 @@ func startMinimalChallenger(
 	var zkChallengerSuperRootRPCProxy *StallableProxy
 	switch {
 	case zkEnabled:
-		// The ZK game validates super roots from the op-node's superroot_atTimestamp endpoint;
+		// The ZK game validates super roots from the rollup node's superroot_atTimestamp endpoint;
 		// it needs no VM config or dependency set.
 		zkChallengerSuperRootRPCProxy = StartStallableProxy(t, "zk-challenger-super-root", l2CL.UserRPC())
 		options = append(options,

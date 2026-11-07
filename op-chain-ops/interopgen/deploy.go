@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum-optimism/optimism/op-chain-ops/genesis/beacondeposit"
 	"github.com/ethereum-optimism/optimism/op-chain-ops/script"
 	gameTypes "github.com/ethereum-optimism/optimism/op-challenger/game/types"
-	"github.com/ethereum-optimism/optimism/op-core/devfeatures"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/manage"
 	"github.com/ethereum-optimism/optimism/op-deployer/pkg/deployer/opcm"
 	"github.com/ethereum-optimism/optimism/op-service/bigs"
@@ -163,11 +162,11 @@ func CreateL2(logger log.Logger, fa *foundry.ArtifactsFS, srcFS *foundry.SourceM
 	return l2Host
 }
 
-// PrepareInitialL1 deploys basics such as preinstalls to L1  (incl. EIP-4788)
+// PrepareInitialL1 deploys basics such as preinstalls to L1  (incl. EIP-4788 and request queues)
 func PrepareInitialL1(l1Host *script.Host, cfg *L1Config) (*L1Deployment, error) {
 	l1Host.SetTxOrigin(sysGenesisDeployer)
 
-	if err := opcm.InsertPreinstalls(l1Host); err != nil {
+	if err := opcm.InsertL1Preinstalls(l1Host); err != nil {
 		return nil, fmt.Errorf("failed to install preinstalls in L1: %w", err)
 	}
 	// No global contracts inserted at this point.
@@ -187,23 +186,31 @@ func DeploySuperchainToL1(l1Host *script.Host, opcmScripts *opcm.Scripts, superC
 		return nil, fmt.Errorf("failed to deploy Superchain contracts: %w", err)
 	}
 
+	sp1Verifier, err := opcm.DeployMockSP1Verifier(l1Host, superCfg.Deployer)
+	if err != nil {
+		return nil, err
+	}
+
 	implementationsDeployment, err := opcmScripts.DeployImplementations.Run(opcm.DeployImplementationsInput{
-		WithdrawalDelaySeconds:          superCfg.Implementations.FaultProof.WithdrawalDelaySeconds,
-		MinProposalSizeBytes:            superCfg.Implementations.FaultProof.MinProposalSizeBytes,
-		ChallengePeriodSeconds:          superCfg.Implementations.FaultProof.ChallengePeriodSeconds,
-		ProofMaturityDelaySeconds:       superCfg.Implementations.FaultProof.ProofMaturityDelaySeconds,
-		DisputeGameFinalityDelaySeconds: superCfg.Implementations.FaultProof.DisputeGameFinalityDelaySeconds,
-		MipsVersion:                     superCfg.Implementations.FaultProof.MipsVersion,
-		DevFeatureBitmap:                devfeatures.OptimismPortalInteropFlag,
-		FaultGameV2MaxGameDepth:         big.NewInt(73),
-		FaultGameV2SplitDepth:           big.NewInt(30),
-		FaultGameV2ClockExtension:       big.NewInt(10800),
-		FaultGameV2MaxClockDuration:     big.NewInt(302400),
-		SuperchainProxyAdmin:            superDeployment.SuperchainProxyAdmin,
-		SuperchainConfigProxy:           superDeployment.SuperchainConfigProxy,
-		L1ProxyAdminOwner:               superCfg.ProxyAdminOwner,
-		Challenger:                      superCfg.Challenger,
-		SP1Verifier:                     common.Address{},
+		MinWithdrawalDelaySeconds:          superCfg.Implementations.FaultProof.MinWithdrawalDelaySeconds,
+		MaxWithdrawalDelaySeconds:          superCfg.Implementations.FaultProof.MaxWithdrawalDelaySeconds,
+		MinProposalSizeBytes:               superCfg.Implementations.FaultProof.MinProposalSizeBytes,
+		ChallengePeriodSeconds:             superCfg.Implementations.FaultProof.ChallengePeriodSeconds,
+		MinProofMaturityDelaySeconds:       superCfg.Implementations.FaultProof.MinProofMaturityDelaySeconds,
+		MaxProofMaturityDelaySeconds:       superCfg.Implementations.FaultProof.MaxProofMaturityDelaySeconds,
+		MinDisputeGameFinalityDelaySeconds: superCfg.Implementations.FaultProof.MinDisputeGameFinalityDelaySeconds,
+		MaxDisputeGameFinalityDelaySeconds: superCfg.Implementations.FaultProof.MaxDisputeGameFinalityDelaySeconds,
+		MipsVersion:                        superCfg.Implementations.FaultProof.MipsVersion,
+		DevFeatureBitmap:                   common.Hash{},
+		FaultGameV2MaxGameDepth:            big.NewInt(73),
+		FaultGameV2SplitDepth:              big.NewInt(30),
+		FaultGameV2ClockExtension:          big.NewInt(10800),
+		FaultGameV2MaxClockDuration:        big.NewInt(302400),
+		SuperchainProxyAdmin:               superDeployment.SuperchainProxyAdmin,
+		SuperchainConfigProxy:              superDeployment.SuperchainConfigProxy,
+		L1ProxyAdminOwner:                  superCfg.ProxyAdminOwner,
+		Challenger:                         superCfg.Challenger,
+		SP1Verifier:                        sp1Verifier,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to deploy Implementations contracts: %w", err)
@@ -251,16 +258,19 @@ func DeployL2ToL1(l1Host *script.Host, superCfg *SuperchainConfig, superDeployme
 			Root:             opcm.DefaultStartingAnchorRoot.Root,
 			L2SequenceNumber: common.Big0,
 		},
-		CannonAbsolutePrestate:       cannonAbsolutePrestate,
-		DisputeMaxGameDepth:          new(big.Int).SetUint64(cfg.DisputeMaxGameDepth),
-		DisputeSplitDepth:            new(big.Int).SetUint64(cfg.DisputeSplitDepth),
-		DisputeClockExtension:        cfg.DisputeClockExtension,
-		DisputeMaxClockDuration:      cfg.DisputeMaxClockDuration,
-		AllowCustomDisputeParameters: true,
-		OperatorFeeScalar:            cfg.GasPriceOracleOperatorFeeScalar,
-		OperatorFeeConstant:          cfg.GasPriceOracleOperatorFeeConstant,
-		SuperchainConfig:             superDeployment.SuperchainConfigProxy,
-		UseCustomGasToken:            cfg.UseCustomGasToken,
+		CannonAbsolutePrestate:          cannonAbsolutePrestate,
+		DisputeMaxGameDepth:             new(big.Int).SetUint64(cfg.DisputeMaxGameDepth),
+		DisputeSplitDepth:               new(big.Int).SetUint64(cfg.DisputeSplitDepth),
+		DisputeClockExtension:           cfg.DisputeClockExtension,
+		DisputeMaxClockDuration:         cfg.DisputeMaxClockDuration,
+		AllowCustomDisputeParameters:    true,
+		OperatorFeeScalar:               cfg.GasPriceOracleOperatorFeeScalar,
+		OperatorFeeConstant:             cfg.GasPriceOracleOperatorFeeConstant,
+		SuperchainConfig:                superDeployment.SuperchainConfigProxy,
+		UseCustomGasToken:               cfg.UseCustomGasToken,
+		ProofMaturityDelaySeconds:       new(big.Int).SetUint64(cfg.ProofMaturityDelaySeconds),
+		DisputeGameFinalityDelaySeconds: new(big.Int).SetUint64(cfg.DisputeGameFinalityDelaySeconds),
+		WithdrawalDelaySeconds:          new(big.Int).SetUint64(cfg.WithdrawalDelaySeconds),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to deploy L2 OP chain: %w", err)
@@ -365,8 +375,10 @@ func GenesisL2(l2Host *script.Host, cfg *L2Config, deployment *L2Deployment, mul
 		GasPayingTokenSymbol:                     cfg.GasPayingTokenSymbol,
 		NativeAssetLiquidityAmount:               cfg.NativeAssetLiquidityAmount.ToInt(),
 		LiquidityControllerOwner:                 cfg.LiquidityControllerOwner,
-		DevFeatureBitmap:                         devFeatureBitmapForL2Genesis(multichainDepSet && lagoonAtGenesis(cfg.L2GenesisLagoonTimeOffset)),
+		DevFeatureBitmap:                         common.Hash{},
 		UseInterop:                               multichainDepSet && lagoonAtGenesis(cfg.L2GenesisLagoonTimeOffset),
+		L2ToL2MessageExpiryPeriod:                new(big.Int),
+		SettlementChainID:                        new(big.Int),
 	}); err != nil {
 		return fmt.Errorf("failed L2 genesis: %w", err)
 	}
@@ -378,15 +390,6 @@ func GenesisL2(l2Host *script.Host, cfg *L2Config, deployment *L2Deployment, mul
 // Using a nil offset means Lagoon (and thus interop) is not scheduled at all.
 func lagoonAtGenesis(lagoonOffset *hexutil.Uint64) bool {
 	return lagoonOffset != nil && *lagoonOffset == 0
-}
-
-// devFeatureBitmapForL2Genesis returns the dev feature bitmap for the Interop flag.
-func devFeatureBitmapForL2Genesis(enableInterop bool) common.Hash {
-	var bitmap common.Hash
-	if enableInterop {
-		bitmap = devfeatures.EnableDevFeature(bitmap, devfeatures.OptimismPortalInteropFlag)
-	}
-	return bitmap
 }
 
 func CompleteL1(l1Host *script.Host, cfg *L1Config) (*L1Output, error) {
