@@ -715,3 +715,55 @@ fn execute_deployed_contract_without_reth_parent_state() -> eyre::Result<()> {
     assert_eq!(storage.provider_ro()?.get_latest_block()?.number, 2);
     Ok(())
 }
+
+/// The proofs engine re-executes blocks reth has already imported and traced, so it must not print
+/// them to the Firehose output a second time.
+#[test]
+#[serial]
+fn execute_block_emits_no_firehose_block() -> eyre::Result<()> {
+    let key_pair = Keypair::new(&Secp256k1::new(), &mut rng());
+    let sender = public_key_to_address(key_pair.public_key());
+    let chain_spec = chain_spec_with_address(sender);
+    // The only test in this binary that installs the process-wide Firehose tracer.
+    let firehose_output =
+        reth_firehose::init_tracer_with_buffer(chain_spec.chain.id(), None, None, None);
+
+    let factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
+    init_genesis(&factory)?;
+    let storage: OpProofsStorage<Arc<MdbxProofsStorage>> = create_mdbx_proofs_storage().into();
+    {
+        let tx = factory.db_ref().tx()?;
+        InitializationJob::new(storage.clone(), tx, RethTrieStorageLayout::Legacy)
+            .run(0, chain_spec.genesis_hash())?;
+    }
+    let blockchain = BlockchainProvider::new(factory.clone())?;
+    let pruner = OpProofStoragePruner::new(storage.clone(), blockchain.clone(), 1000);
+    let engine = EngineHandle::spawn(
+        reth_firehose::FirehoseEvmConfig::new(EthEvmConfig::ethereum(chain_spec.clone())),
+        blockchain,
+        storage,
+        pruner,
+    );
+
+    let transfer =
+        BlockSpec::new(vec![TxSpec::transfer(Address::repeat_byte(0x42), U256::from(1))]);
+    let mut nonce = 0;
+    let mut block = create_block_from_spec(
+        &transfer,
+        1,
+        chain_spec.genesis_hash(),
+        &chain_spec,
+        key_pair,
+        &mut nonce,
+    );
+    execute_block(&mut block, &factory, &chain_spec)?;
+    // Returns once the engine has executed the block and matched its state root.
+    engine.execute_block(&block)?;
+
+    let output = String::from_utf8(firehose_output.get_bytes())?;
+    assert!(
+        !output.contains("FIRE BLOCK"),
+        "the proofs engine printed a Firehose block:\n{output}"
+    );
+    Ok(())
+}

@@ -115,11 +115,14 @@ where
     let state_provider = state.memory.state_provider(block.parent_hash(), inner_provider);
 
     let db = StateProviderDatabase::new(&state_provider);
-    let block_executor = state.evm_config.batch_executor(db);
-    let execution_result = block_executor.execute(block)?;
+    // Must stay `execute_one`, not `execute`: the node's Firehose executor traces `execute` and
+    // would print a second `FIRE BLOCK` for a block reth's import already traced.
+    let mut block_executor = state.evm_config.batch_executor(db);
+    block_executor.execute_one(block)?;
+    let bundle_state = block_executor.into_state().take_bundle();
     let execution_duration = start.elapsed();
 
-    let hashed_state = state_provider.hashed_post_state(&execution_result.state)?;
+    let hashed_state = state_provider.hashed_post_state(&bundle_state)?;
     let (state_root, trie_updates) =
         state_provider.state_root_with_updates(hashed_state.clone())?;
     let state_root_duration = start.elapsed() - execution_duration;
