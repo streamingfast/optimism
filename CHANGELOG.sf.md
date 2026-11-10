@@ -9,6 +9,22 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## op-reth-v2.8.2-fh3.1
+
+Bumps the SF op-reth fork to upstream `op-reth/v2.8.2` (18 upstream commits on top of
+`op-reth/v2.8.1`).
+
+### Changed
+
+* Merged upstream `op-reth/v2.8.2`, which keeps the interop transaction pool's `endpoint.up` gauge
+  up when a filter answers `-321100` (out of scope) and shares the operator gas limit with the
+  transaction pool. Block execution, the fork schedule and the reth and alloy-evm versions are
+  unchanged.
+* Reth and `alloy-evm` are pinned by commit instead of by tag, still on `streamingfast/reth`
+  `op-reth-v2.8.1-fh3.1` and `streamingfast/evm` `v0.39.0-sf`.
+* `ACTIVATIONS.md` records Optimism's mid-December 2026 target for Lagoon, which still has no
+  timestamp in the code and still needs Firehose support for the `0x7D` post-exec transaction.
+
 ## op-reth-v2.8.1-fh3.1
 
 Bumps the SF op-reth fork to upstream `op-reth/v2.8.1` (307 upstream commits on top of
