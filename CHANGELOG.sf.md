@@ -9,6 +9,16 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## Unreleased
+
+### Fixed
+
+* With `--proofs-history`, the proofs ExEx no longer prints a second `FIRE BLOCK` for each block
+  it re-executes to build its proof storage. Blocks it caught up on at startup or after falling
+  behind, blocks without precomputed trie data and blocks picked by
+  `--proofs-history.verification-interval` appeared twice in the Firehose output, often out of
+  order.
+
 ## op-reth-v2.8.2-fh3.1
 
 Bumps the SF op-reth fork to upstream `op-reth/v2.8.2` (18 upstream commits on top of

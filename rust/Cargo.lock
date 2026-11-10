@@ -14408,6 +14408,7 @@ dependencies = [
  "reth-evm",
  "reth-evm-ethereum",
  "reth-execution-errors",
+ "reth-firehose",
  "reth-metrics",
  "reth-node-api",
  "reth-optimism-trie",
