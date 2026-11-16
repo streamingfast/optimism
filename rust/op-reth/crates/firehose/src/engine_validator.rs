@@ -165,9 +165,9 @@ use reth_primitives_traits::{
 };
 use reth_provider::{
     BlockExecutionOutput, BlockHashReader, BlockReader, ChangeSetReader, DatabaseProviderFactory,
-    DatabaseProviderROFactory, HashedPostStateProvider, HistoryReader, ProviderError,
-    PruneCheckpointReader, StageCheckpointReader, StateProvider, StateProviderBox,
-    StateProviderFactory, StateReader, StateRootProvider, StorageChangeSetReader,
+    DatabaseProviderROFactory, EvmStateProvider, EvmStateProviderBox, HashedPostStateProvider,
+    HistoryReader, ProviderError, PruneCheckpointReader, StageCheckpointReader, StateProvider,
+    StateProviderBox, StateProviderFactory, StateReader, StateRootProvider, StorageChangeSetReader,
     StorageSettingsCache,
 };
 use reth_revm::{
@@ -556,7 +556,7 @@ where
         let mut state_provider = ensure_ok!(
             state_provider_factory
                 .database_provider_ro()
-                .map(|provider| Box::new(provider) as StateProviderBox)
+                .map(|provider| Box::new(provider.into_evm_state_provider()) as EvmStateProviderBox)
         );
         drop(_enter);
 
@@ -981,7 +981,7 @@ where
         InsertBlockErrorKind,
     >
     where
-        S: StateProvider + Send,
+        S: EvmStateProvider + Send,
         Err: core::error::Error + Send + Sync + 'static,
         V: PayloadValidator<T, Block = N::Block>,
         T: PayloadTypes<BuiltPayload: BuiltPayload<Primitives = N>>,
@@ -1102,7 +1102,7 @@ where
         InsertBlockErrorKind,
     >
     where
-        S: StateProvider + Send,
+        S: EvmStateProvider + Send,
         Err: core::error::Error + Send + Sync + 'static,
         V: PayloadValidator<T, Block = N::Block>,
         T: PayloadTypes<BuiltPayload: BuiltPayload<Primitives = N>>,

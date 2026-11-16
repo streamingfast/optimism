@@ -280,7 +280,9 @@ where
                 if let BuildOutcomeKind::Freeze(payload) = &outcome {
                     if let Some(executed) = payload.executed_block() {
                         let mut trace_state = State::builder()
-                            .with_database(StateProviderDatabase::new(&state_provider))
+                            .with_database(StateProviderDatabase::new(
+                                (&state_provider).into_evm_state_provider(),
+                            ))
                             .with_bundle_update()
                             .build();
                         self.evm_config
