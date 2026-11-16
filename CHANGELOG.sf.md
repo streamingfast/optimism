@@ -9,10 +9,28 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
-## Unreleased
+## op-reth-v2.9.0-fh3.1
+
+Bumps the SF op-reth fork to upstream `op-reth/v2.9.0` (50 upstream commits on top of
+`op-reth/v2.8.2`).
+
+### Changed
+
+* Merged upstream `op-reth/v2.9.0`, which moves reth to ethereum-optimism/reth `op-v2.7.0-0`
+  (reth v2.7.0) and revm to 43.0.3. Upstream's release notes list breaking RPC changes
+  (`--rpc.gascap` now caps `eth_estimateGas`, three RPC limit flags reject `0`, error code `4444`
+  for pruned history) and lower RPC cache defaults. The fee vault formulas, deposit handling and
+  fork schedule the Firehose hooks depend on are unchanged.
+* Reth now comes from `streamingfast/reth` `op-reth-v2.9.0-fh3.1`, which merges `op-v2.7.0-0` into
+  `release/optimism-2.x`. `alloy-evm` stays on `streamingfast/evm` `v0.39.0-sf`.
+* `firehose-tracer` moves to 5.5.1.
+* `ACTIVATIONS.md` records the January 11, 2027 target for Lagoon and what its post-exec
+  transaction and gas refunds change in the Firehose block.
 
 ### Fixed
 
+* Optimism post-exec transactions (type `0x7D`, enabled by Lagoon) are traced as
+  `TRX_TYPE_OPTIMISM_POST_EXEC` instead of stopping the node.
 * With `--proofs-history`, the proofs ExEx no longer prints a second `FIRE BLOCK` for each block
   it re-executes to build its proof storage. Blocks it caught up on at startup or after falling
   behind, blocks without precomputed trie data and blocks picked by
