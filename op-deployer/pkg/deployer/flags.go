@@ -14,28 +14,28 @@ import (
 )
 
 const (
-	EnvVarPrefix               = flags.EnvVarPrefix
-	L1RPCURLFlagName           = flags.L1RPCURLFlagName
-	CacheDirFlagName           = flags.CacheDirFlagName
-	L1ChainIDFlagName          = flags.L1ChainIDFlagName
-	ArtifactsLocatorFlagName   = flags.ArtifactsLocatorFlagName
-	L2ChainIDsFlagName         = flags.L2ChainIDsFlagName
-	WorkdirFlagName            = flags.WorkdirFlagName
-	OutdirFlagName             = flags.OutdirFlagName
-	PrivateKeyFlagName         = flags.PrivateKeyFlagName
-	PrestateFlagName           = flags.PrestateFlagName
-	IntentTypeFlagName         = flags.IntentTypeFlagName
-	VerifierAPIKeyFlagName     = flags.VerifierAPIKeyFlagName
-	EtherscanAPIKeyFlagName    = flags.EtherscanAPIKeyFlagName // Deprecated: use VerifierAPIKeyFlagName
-	InputFileFlagName          = flags.InputFileFlagName
-	ContractNameFlagName       = flags.ContractNameFlagName
-	VerifierTypeFlagName       = flags.VerifierTypeFlagName
-	VerifierUrlFlagName        = flags.VerifierUrlFlagName
-	UseForgeFlagName           = flags.UseForgeFlagName
-	ForgeSlowBroadcastFlagName = flags.ForgeSlowBroadcastFlagName
-	GenesisTimeOffsetFlagName  = flags.GenesisTimeOffsetFlagName
+	EnvVarPrefix              = flags.EnvVarPrefix
+	L1RPCURLFlagName          = flags.L1RPCURLFlagName
+	CacheDirFlagName          = flags.CacheDirFlagName
+	L1ChainIDFlagName         = flags.L1ChainIDFlagName
+	ArtifactsLocatorFlagName  = flags.ArtifactsLocatorFlagName
+	L2ChainIDsFlagName        = flags.L2ChainIDsFlagName
+	WorkdirFlagName           = flags.WorkdirFlagName
+	OutdirFlagName            = flags.OutdirFlagName
+	PrivateKeyFlagName        = flags.PrivateKeyFlagName
+	PrestateFlagName          = flags.PrestateFlagName
+	IntentTypeFlagName        = flags.IntentTypeFlagName
+	VerifierAPIKeyFlagName    = flags.VerifierAPIKeyFlagName
+	EtherscanAPIKeyFlagName   = flags.EtherscanAPIKeyFlagName // Deprecated: use VerifierAPIKeyFlagName
+	InputFileFlagName         = flags.InputFileFlagName
+	ContractNameFlagName      = flags.ContractNameFlagName
+	VerifierTypeFlagName      = flags.VerifierTypeFlagName
+	VerifierUrlFlagName       = flags.VerifierUrlFlagName
+	UseForgeFlagName          = flags.UseForgeFlagName
+	GenesisTimeOffsetFlagName = flags.GenesisTimeOffsetFlagName
 
-	ReceiptQueryIntervalFlagName = flags.ReceiptQueryIntervalFlagName
+	ReceiptQueryIntervalFlagName  = flags.ReceiptQueryIntervalFlagName
+	DeployMockSP1VerifierFlagName = flags.DeployMockSP1VerifierFlagName
 )
 
 var (
@@ -143,22 +143,23 @@ var (
 	}
 	UseForgeFlag = &cli.BoolFlag{
 		Name:    UseForgeFlagName,
-		Usage:   "use Forge instead of script.Host for deployment scripts",
+		Usage:   "run the deployment scripts with forge; false runs them on the Go script host, which a later release removes",
 		EnvVars: PrefixEnvVar("USE_FORGE"),
-		Value:   false,
-	}
-	ForgeSlowBroadcastFlag = &cli.BoolFlag{
-		Name:    ForgeSlowBroadcastFlagName,
-		Usage:   "with --use-forge, wait for each broadcast transaction to confirm before sending the next",
-		EnvVars: PrefixEnvVar("FORGE_SLOW_BROADCAST"),
-		Value:   false,
+		Value:   true,
 	}
 	ReceiptQueryIntervalFlag = &cli.DurationFlag{
 		Name:    ReceiptQueryIntervalFlagName,
-		Usage:   "for tests: how often to poll for each broadcast's receipt, from 50ms to 1s; 0 uses the default of 1s. Does not affect transactions sent by Forge",
+		Usage:   "for tests: how often to poll for each broadcast's receipt, from 50ms to 1s; 0 uses the default of 1s",
 		EnvVars: PrefixEnvVar("RECEIPT_QUERY_INTERVAL"),
 		Value:   broadcaster.DefaultReceiptQueryInterval,
 		Hidden:  true,
+	}
+	DeployMockSP1VerifierFlag = &cli.BoolFlag{
+		Name: DeployMockSP1VerifierFlagName,
+		Usage: "deploy a mock SP1 verifier for the ZK dispute game, on an L1 without a release verifier, " +
+			"in a genesis or live. Development only: the mock accepts every proof.",
+		EnvVars: PrefixEnvVar("DEPLOY_MOCK_SP1_VERIFIER"),
+		Value:   false,
 	}
 	GenesisTimeOffsetFlag = &cli.Uint64Flag{
 		Name: GenesisTimeOffsetFlagName,
@@ -202,8 +203,8 @@ var ApplyFlags = []cli.Flag{
 	VerifierFlag,
 	VerifierUrlFlag,
 	UseForgeFlag,
-	ForgeSlowBroadcastFlag,
 	ReceiptQueryIntervalFlag,
+	DeployMockSP1VerifierFlag,
 }
 
 var PrestateFlags = []cli.Flag{
