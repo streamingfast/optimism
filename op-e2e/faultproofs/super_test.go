@@ -86,7 +86,12 @@ func TestSuperCannonPublishCannonRootClaim(t *testing.T) {
 		sys, disputeGameFactory, _ := StartInteropFaultDisputeSystem(t, WithAllocType(allocType))
 		b, err := sys.L1GethClient().HeaderByNumber(ctx, nil)
 		require.NoError(t, err)
-		disputeL2SequenceNumber := b.Time + test.disputeL2SequenceNumberOffset
+		// The VM status of each case depends only on how far the disputed timestamp is past the game's
+		// anchor (L1 genesis here). With a base on a multiple of 4s past it, offset 2 always gives an
+		// invalid status and offset 3 a valid one, whatever the L1 block time or startup drift.
+		genesisTime := sys.L1Genesis().Timestamp
+		base := genesisTime + (b.Time-genesisTime)/4*4
+		disputeL2SequenceNumber := base + test.disputeL2SequenceNumberOffset
 
 		game := disputeGameFactory.StartSuperCannonGameAtTimestamp(ctx, disputeL2SequenceNumber, disputegame.WithInvalidSuperRoot())
 		game.DisputeLastBlock(ctx)
@@ -379,7 +384,7 @@ func TestSuperInvalidateUnsafeProposal(t *testing.T) {
 		require.NoError(t, err, "Failed to get sync status")
 
 		// Wait for any client to advance its unsafe head past the safe chain. We know this head will remain unsafe since the batcher is stopped.
-		l2Client := sys.L2GethClient(sys.L2IDs()[0], "sequencer")
+		l2Client := sys.L2ELClient(sys.L2IDs()[0], "sequencer")
 		require.NoError(t, wait.ForNextBlock(ctx, l2Client))
 		head, err := l2Client.HeaderByNumber(ctx, nil)
 		require.NoError(t, err, "Failed to get head block")
@@ -432,7 +437,7 @@ func TestSuperInalidateUnsafeProposal_SecondChainIsUnsafe(t *testing.T) {
 		require.NoError(t, sys.Batcher(bChain).Stop(ctx))
 
 		// Wait for client B to advance its unsafe head past the safe chain B. We know this head will remain unsafe since batcher B is stopped.
-		bL2Client := sys.L2GethClient(bChain, "sequencer")
+		bL2Client := sys.L2ELClient(bChain, "sequencer")
 		targetBlock, err := bL2Client.HeaderByNumber(ctx, nil)
 		require.NoError(t, err, "Failed to get latest block")
 		targetTimestamp := targetBlock.Time
