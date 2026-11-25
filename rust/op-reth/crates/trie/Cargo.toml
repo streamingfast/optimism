@@ -82,6 +82,7 @@ mockall.workspace = true
 eyre.workspace = true
 
 # misc
+metrics-util = { workspace = true, features = ["debugging"] }
 serial_test.workspace = true
 
 [features]

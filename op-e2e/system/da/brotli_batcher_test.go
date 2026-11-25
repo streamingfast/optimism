@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 func setupAliceAccount(t *testing.T, cfg e2esys.SystemConfig, sys *e2esys.System, ethPrivKey *ecdsa.PrivateKey) {
@@ -63,7 +64,6 @@ func TestBrotliBatcherFjord(t *testing.T) {
 	cfg.DataAvailabilityType = batcherFlags.BlobsType
 
 	genesisActivation := hexutil.Uint64(0)
-	cfg.DeployConfig.L1CancunTimeOffset = &genesisActivation
 	cfg.DeployConfig.L2GenesisDeltaTimeOffset = &genesisActivation
 	cfg.DeployConfig.L2GenesisEcotoneTimeOffset = &genesisActivation
 	cfg.DeployConfig.L2GenesisFjordTimeOffset = &genesisActivation
@@ -87,7 +87,7 @@ func TestBrotliBatcherFjord(t *testing.T) {
 		opts.Value = big.NewInt(1_000_000_000)
 		opts.Nonce = 1 // Already have deposit
 		opts.ToAddr = &common.Address{0xff, 0xff}
-		opts.Gas, err = core.IntrinsicGas(opts.Data, nil, nil, false, true, true, false)
+		opts.Gas, err = core.IntrinsicGas(opts.Data, nil, nil, common.Address{}, &common.Address{}, nil, params.Rules{IsHomestead: true, IsIstanbul: true})
 		require.NoError(t, err)
 		opts.VerifyOnClients(sys.NodeSourceClient("verifier"))
 	})

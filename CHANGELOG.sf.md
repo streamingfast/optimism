@@ -9,6 +9,26 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## op-reth-v2.10.0-fh3.1
+
+Bumps the SF op-reth fork to upstream `op-reth/v2.10.0` (152 upstream commits on top of
+`op-reth/v2.9.0`).
+
+### Changed
+
+* Merged upstream `op-reth/v2.10.0`, which schedules Lagoon on OP Mainnet and Unichain for
+  2027-01-11 16:00:01 UTC (`1799683201`) and on their Sepolia networks for 2026-12-10 16:00:01 UTC,
+  caps historical `eth_getProof` requests at 1,024 storage keys, fixes historical proofs after an
+  unwind and drops several retired chains from the built-in registry. Upstream also removes the
+  op-reth node generics; the Firehose EVM config and engine validator are wired into the
+  concrete node types the same way as before.
+* Reth now comes from `streamingfast/reth` `op-reth-v2.10.0-fh3.1`, which merges `op-v2.7.0-2` into
+  `release/optimism-2.x`. `alloy-evm` stays on `streamingfast/evm` `v0.39.0-sf` and
+  `firehose-tracer` on 5.5.1.
+* `ACTIVATIONS.md` records the Lagoon activation time. The Lagoon items it lists (post-exec
+  transaction without a call or receipt, sender `GasRefund` without the operator fee part) are
+  unchanged by this release and reach the Firehose output from that date.
+
 ## op-reth-v2.9.0-fh3.1
 
 Bumps the SF op-reth fork to upstream `op-reth/v2.9.0` (50 upstream commits on top of
