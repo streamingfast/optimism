@@ -20,6 +20,7 @@ The version matches the reth tag so both forks stay aligned.
   which that reth tag requires.
 * Releases are now cut as library releases: merging a release PR that changes this file tags the
   top-most version, through the `sf-draft-release.yml` and `sf-publish-release.yml` workflows.
+* Remove the tag-triggered `sf-release.yml` Docker image build, which does not belong on this library branch.
 
 ### Fixed
 
