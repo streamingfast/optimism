@@ -9,6 +9,26 @@ The `sf-release.yml` workflow publishes the top-most version section here as the
 GitHub release notes (via `sfreleaser changelog extract-section`), so keep the
 most recent release at the top.
 
+## world-chain-v2.8.1-fh3.1-2
+
+Picks up the Firehose staged-sync finality fix from `streamingfast/reth` `world-chain-v2.8.1-fh3.1-2`.
+The version matches the reth tag so both forks stay aligned.
+
+### Changed
+
+* Reth now comes from `streamingfast/reth` `world-chain-v2.8.1-fh3.1-2`, and `firehose-tracer` moves to `5.5.1`,
+  which that reth tag requires.
+* Releases are now cut as library releases: merging a release PR that changes this file tags the
+  top-most version, through the `sf-draft-release.yml` and `sf-publish-release.yml` workflows.
+* Remove the tag-triggered `sf-release.yml` Docker image build, which does not belong on this library branch.
+
+### Fixed
+
+* Fix blocks replayed by staged sync (the pipeline Execution stage) being advertised as final. They now carry
+  the node's finalized head as LIB, or the block itself when it is at or below the finalized block. On OP Stack
+  the pipeline backfills up to the unsafe head, so readers that had fallen behind used to report unsafe blocks
+  as final. See streamingfast/reth#113, which ports streamingfast/reth#110.
+
 ## world-chain-v2.8.1-fh3.1
 
 Moves the world-chain line to upstream `op-reth/v2.8.1` (`72207294`), the optimism rev world-chain
